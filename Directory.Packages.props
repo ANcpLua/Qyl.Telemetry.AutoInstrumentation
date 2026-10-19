@@ -58,9 +58,9 @@
     <PackageVersion Include="Oracle.ManagedDataAccess.OpenTelemetry" Version="23.26.300" />
     <PackageVersion Include="Quartz" Version="4.4.0" />
     <PackageVersion Include="Qyl.Telemetry.Testing" Version="3.0.3" />
-    <PackageVersion Include="Qyl.Telemetry.SemanticConventions" Version="15.0.0" />
-    <PackageVersion Include="Qyl.Telemetry.SemanticConventions.Incubating" Version="15.0.0" />
-    <PackageVersion Include="Qyl.Telemetry.SemanticConventions.Analyzers" Version="15.0.0" />
+    <PackageVersion Include="Qyl.Telemetry.SemanticConventions" Version="15.0.2" />
+    <PackageVersion Include="Qyl.Telemetry.SemanticConventions.Incubating" Version="15.0.2" />
+    <PackageVersion Include="Qyl.Telemetry.SemanticConventions.Analyzers" Version="15.0.2" />
     <PackageVersion Include="RabbitMQ.Client" Version="7.2.2" />
     <PackageVersion Include="Roslynator.Analyzers" Version="5.0.1" />
     <!-- Override Microsoft.Data.Sqlite's vulnerable native transitive (GHSA-2m69-gcr7-jv3q). -->

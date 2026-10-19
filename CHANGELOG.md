@@ -5,6 +5,10 @@ Notable changes to the `Qyl.Telemetry.*` package family. Versions are owned by `
 that exact version, creates the matching `v*` tag and GitHub release, and waits for all package indexes. Indexed
 packages are then exercised in clean managed and NativeAOT consumers.
 
+## [28.2.3] - 2026-10-19
+
+- Consume SemanticConventions 15.0.2 with corrected native-vendor persistence policy and analyzer namespace recognition.
+
 ## [28.2.2] - 2026-10-19
 
 - Consume SemanticConventions 15.0.0 and its generated Weaver v2 validation configuration.
