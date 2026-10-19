@@ -158,7 +158,7 @@ public sealed partial class QylAutoInstrumentationGenerator
 
         return new IntegrationDeclaration(
             name,
-            CleanTypeName(type),
+            EmittedTypeName(type),
             instrumentationId,
             signal,
             metricIds.AsEquatableArray(),

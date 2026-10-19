@@ -65,7 +65,7 @@ public sealed partial class QylAutoInstrumentationGenerator
             : symbol.ContainingType;
         var instrumentationId = GetDbInstrumentationId(effectiveReceiverType);
         match = new ShapeMatch(
-            CleanTypeName(symbol.ContainingType),
+            EmittedTypeName(symbol.ContainingType),
             returnType,
             parameters,
             isAsync,
@@ -100,7 +100,7 @@ public sealed partial class QylAutoInstrumentationGenerator
 
     private static bool TryGetDbCommandReturn(IMethodSymbol symbol, string methodName, bool isAsync, out string returnType)
     {
-        returnType = CleanTypeName(symbol.ReturnType, symbol);
+        returnType = EmittedTypeName(symbol.ReturnType, symbol);
         if (string.Equals(methodName, "ExecuteNonQuery", StringComparison.Ordinal))
             return symbol.ReturnType.SpecialType is SpecialType.System_Int32;
 
@@ -230,8 +230,8 @@ public sealed partial class QylAutoInstrumentationGenerator
         }
 
         match = new ShapeMatch(
-            CleanTypeName(symbol.ContainingType),
-            CleanTypeName(symbol.ReturnType, symbol),
+            EmittedTypeName(symbol.ContainingType),
+            EmittedTypeName(symbol.ReturnType, symbol),
             BuildParameters(symbol),
             IsTask(symbol.ReturnType) || TryGetTaskResult(symbol.ReturnType, out _),
             ShapeExpression: QuoteLiteral(GetWcfMethodName(contractType, symbol)));
@@ -317,13 +317,13 @@ public sealed partial class QylAutoInstrumentationGenerator
     private static bool TryMatchKafkaProduce(IMethodSymbol symbol, out ShapeMatch match)
     {
         match = default;
-        var receiver = CleanTypeName(symbol.ContainingType);
+        var receiver = EmittedTypeName(symbol.ContainingType);
         if (string.Equals(symbol.Name, "ProduceAsync", StringComparison.Ordinal) &&
             TryGetTaskResult(symbol.ReturnType, out var resultType) &&
             IsConstructedGeneric(resultType, "Confluent.Kafka", "DeliveryResult`2") &&
             TryGetKafkaProduceParameters(symbol, isAsync: true, out var parameters))
         {
-            match = new ShapeMatch(receiver, CleanTypeName(symbol.ReturnType, symbol), parameters, true);
+            match = new ShapeMatch(receiver, EmittedTypeName(symbol.ReturnType, symbol), parameters, true);
             return true;
         }
 
@@ -384,7 +384,7 @@ public sealed partial class QylAutoInstrumentationGenerator
             return false;
         }
 
-        match = new ShapeMatch(CleanTypeName(symbol.ContainingType), CleanTypeName(symbol.ReturnType, symbol), parameters, false);
+        match = new ShapeMatch(EmittedTypeName(symbol.ContainingType), EmittedTypeName(symbol.ReturnType, symbol), parameters, false);
         return true;
     }
 
@@ -419,8 +419,8 @@ public sealed partial class QylAutoInstrumentationGenerator
         }
 
         match = new ShapeMatch(
-            CleanTypeName(symbol.ContainingType),
-            CleanTypeName(symbol.ReturnType, symbol),
+            EmittedTypeName(symbol.ContainingType),
+            EmittedTypeName(symbol.ReturnType, symbol),
             parameters,
             true,
             ShapeExpression: RedisOperationExpression(in operation, helperType));
@@ -865,7 +865,7 @@ public sealed partial class QylAutoInstrumentationGenerator
             return false;
 
         var expiry = parameters[1].Name;
-        switch (parameters[1].TypeName)
+        switch (parameters[1].MatchTypeName)
         {
             case "global::System.TimeSpan?":
                 operation = new RedisOperationSpec(
@@ -891,13 +891,13 @@ public sealed partial class QylAutoInstrumentationGenerator
 
     private static bool IsRedisParameter(EquatableArray<ParameterSpec> parameters, int index, string typeName)
         => index < parameters.Length &&
-           string.Equals(parameters[index].TypeName, typeName, StringComparison.Ordinal);
+           string.Equals(parameters[index].MatchTypeName, typeName, StringComparison.Ordinal);
 
     private static int IndexOfRedisParameter(EquatableArray<ParameterSpec> parameters, string typeName)
     {
         for (var index = 0; index < parameters.Length; index++)
         {
-            if (string.Equals(parameters[index].TypeName, typeName, StringComparison.Ordinal))
+            if (string.Equals(parameters[index].MatchTypeName, typeName, StringComparison.Ordinal))
                 return index;
         }
 
@@ -924,41 +924,19 @@ public sealed partial class QylAutoInstrumentationGenerator
 
     private static EquatableArray<ParameterSpec> BuildParameters(IMethodSymbol symbol)
     {
+        // C# binds optional defaults at the original call before redirecting it to the interceptor.
         var builder = ImmutableArray.CreateBuilder<ParameterSpec>(symbol.Parameters.Length);
         for (var i = 0; i < symbol.Parameters.Length; i++)
         {
             builder.Add(new ParameterSpec(
-                CleanTypeName(symbol.Parameters[i].Type, symbol),
+                EmittedTypeName(symbol.Parameters[i].Type, symbol),
+                CleanTypeName(symbol.Parameters[i].Type),
                 "p" + i.ToString(CultureInfo.InvariantCulture),
-                GetDefaultValueExpression(symbol.Parameters[i]),
                 symbol.Parameters[i].IsParams,
                 symbol.Parameters[i].RefKind));
         }
 
         return builder.ToImmutable().AsEquatableArray();
-    }
-
-    private static string GetDefaultValueExpression(IParameterSymbol parameter)
-    {
-        if (!parameter.IsOptional)
-            return string.Empty;
-
-        if (!parameter.HasExplicitDefaultValue)
-            return "default";
-
-        if (parameter.ExplicitDefaultValue is null)
-            return parameter.Type.IsValueType ? "default" : "null";
-
-        if (parameter.Type.SpecialType is SpecialType.System_Boolean)
-            return (bool)parameter.ExplicitDefaultValue ? "true" : "false";
-
-        if (parameter.Type.SpecialType is SpecialType.System_Int32)
-            return ((int)parameter.ExplicitDefaultValue).ToString(CultureInfo.InvariantCulture);
-
-        if (parameter.Type.SpecialType is SpecialType.System_String)
-            return "\"" + parameter.ExplicitDefaultValue.ToString().Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
-
-        return "default";
     }
 
     private static bool IsConstructedGeneric(ITypeSymbol? symbol, string namespaceName, string metadataName)
@@ -1045,15 +1023,18 @@ public sealed partial class QylAutoInstrumentationGenerator
     private static string CleanTypeName(ITypeSymbol symbol)
         => symbol.ToDisplayString(FullyQualifiedFormat);
 
-    private static string CleanTypeName(ITypeSymbol symbol, IMethodSymbol method)
+    private static string EmittedTypeName(ITypeSymbol symbol)
+        => symbol.ToDisplayString(EmittedTypeFormat);
+
+    private static string EmittedTypeName(ITypeSymbol symbol, IMethodSymbol method)
     {
         var genericMethod = GetGenericMethodForEmission(method);
         return genericMethod.TypeParameters.Length is 0
-            ? CleanTypeName(symbol)
-            : CleanTypeName(symbol, genericMethod.TypeParameters, genericMethod.TypeArguments);
+            ? EmittedTypeName(symbol)
+            : EmittedTypeName(symbol, genericMethod.TypeParameters, genericMethod.TypeArguments);
     }
 
-    private static string CleanTypeName(
+    private static string EmittedTypeName(
         ITypeSymbol symbol,
         ImmutableArray<ITypeParameterSymbol> typeParameters,
         ImmutableArray<ITypeSymbol> typeArguments)
@@ -1061,28 +1042,32 @@ public sealed partial class QylAutoInstrumentationGenerator
         for (var i = 0; i < typeArguments.Length && i < typeParameters.Length; i++)
         {
             if (symbol.IsEqualTo(typeArguments[i]))
-                return typeParameters[i].Name;
+                return typeParameters[i].Name + NullableReferenceSuffix(symbol);
         }
 
         switch (symbol)
         {
             case ITypeParameterSymbol typeParameter:
-                return typeParameter.Name;
+                return typeParameter.Name + NullableReferenceSuffix(typeParameter);
             case IArrayTypeSymbol array:
-                return CleanTypeName(array.ElementType, typeParameters, typeArguments) + "[]";
+                return EmittedTypeName(array.ElementType, typeParameters, typeArguments) +
+                       "[" + new string(',', array.Rank - 1) + "]" + NullableReferenceSuffix(array);
             case INamedTypeSymbol { IsGenericType: true, TypeArguments.Length: > 0 } named:
             {
                 var constructedName = named.ConstructedFrom.ToDisplayString(FullyQualifiedFormat);
                 var genericStart = constructedName.IndexOf('<');
                 var typeName = genericStart < 0 ? constructedName : constructedName.Substring(0, genericStart);
                 var arguments = named.TypeArguments
-                    .Select(typeArgument => CleanTypeName(typeArgument, typeParameters, typeArguments));
-                return typeName + "<" + string.Join(", ", arguments) + ">";
+                    .Select(typeArgument => EmittedTypeName(typeArgument, typeParameters, typeArguments));
+                return typeName + "<" + string.Join(", ", arguments) + ">" + NullableReferenceSuffix(named);
             }
             default:
-                return CleanTypeName(symbol);
+                return EmittedTypeName(symbol);
         }
     }
+
+    private static string NullableReferenceSuffix(ITypeSymbol symbol)
+        => !symbol.IsValueType && symbol.NullableAnnotation is NullableAnnotation.Annotated ? "?" : string.Empty;
 
     private static string QuoteLiteral(string value)
     {

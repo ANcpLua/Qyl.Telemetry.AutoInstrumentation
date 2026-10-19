@@ -14,6 +14,8 @@
     <PackageReference Include="Microsoft.Agents.AI" />
     <PackageReference Include="Microsoft.Agents.AI.Workflows" />
     <PackageReference Include="Microsoft.Extensions.AI" />
+    <PackageReference Include="Confluent.Kafka" />
+    <PackageReference Include="System.ServiceModel.Primitives" />
     <ProjectReference Include="../../src/Qyl.Telemetry.Hosting/Qyl.Telemetry.Hosting.csproj" />
     <PackageReference Include="Qyl.Telemetry.Testing" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />

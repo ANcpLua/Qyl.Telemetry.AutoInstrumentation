@@ -5,6 +5,13 @@ Notable changes to the `Qyl.Telemetry.*` package family. Versions are owned by `
 that exact version, creates the matching `v*` tag and GitHub release, and waits for all package indexes. Indexed
 packages are then exercised in clean managed and NativeAOT consumers.
 
+## [28.2.2] - 2026-10-19
+
+- Preserve nullable annotations on generated receivers, parameters and returns, including nullable generic arguments and array ranks. Keep overload matching annotation-insensitive.
+- Remove blanket warning suppression from generated interceptors and build metadata. Scope obsolete warnings to their forwarded calls while retaining diagnostics at the original caller.
+- Leave optional argument defaults with the original method instead of copying them into interceptor declarations.
+- Verify generated consumers with warnings as errors in the normal pre-push gate. Exclude unused filesystem guards from the compiler-host generator assembly.
+
 ## [28.2.1] - 2026-10-19
 
 - Rebuild the instrumentation and hosting package family with .NET SDK 10.0.402 and ANcpLua.Analyzers 2.1.8. Public API unchanged; no runtime behavior change.

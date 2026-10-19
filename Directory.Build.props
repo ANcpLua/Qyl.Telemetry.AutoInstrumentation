@@ -26,7 +26,7 @@
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
 
-    <Version>28.2.1</Version>
+    <Version>28.2.2</Version>
     <Authors>qyl</Authors>
     <!-- The GitHub repository was NOT renamed with the packages; this must stay truthful to
          the real origin or the publish workflow's provenance check rejects the nuspec. -->
