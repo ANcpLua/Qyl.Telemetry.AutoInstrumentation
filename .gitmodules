@@ -1,0 +1,3 @@
+[submodule "eng/dependencies/Qyl.Telemetry.Tests"]
+	path = eng/dependencies/Qyl.Telemetry.Tests
+	url = https://github.com/ANcpLua/Qyl.Telemetry.Tests.git

@@ -495,6 +495,15 @@ railway config plan --detailed-exit-code  # exits 0 when Railway and the file ag
 
 ## Demos and verifiers
 
+The native HTTP-header and gRPC-metadata fixtures share `Qyl.Telemetry.Tests.Capture`
+from the pinned Git submodule at `eng/dependencies/Qyl.Telemetry.Tests`.
+`./eng/build.sh` initializes it; before direct `dotnet` commands, run
+`git submodule update --init -- eng/dependencies/Qyl.Telemetry.Tests`.
+Change reusable capture assertions and reporting in the owning repository, verify
+them, then update the gitlink. Fixture workloads and expected values stay here.
+Both fixtures emit the same versioned JSON schema and check raw CLR arrays before
+serialization, trace/parent identities, and capture teardown.
+
 Thirty demo applications under `demos/` are the runtime evidence. Native MSTest cases in
 `tests/Qyl.Telemetry.Integration.Tests/Lanes/<Name>Tests.cs` build and execute them, including
 Native AOT where the integration supports it. Each execution owns a `Qyl.Telemetry.Testing`

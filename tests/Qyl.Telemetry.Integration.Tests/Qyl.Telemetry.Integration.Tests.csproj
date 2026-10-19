@@ -7,6 +7,7 @@
     <OtelSemConvInstrumentationLibrary>true</OtelSemConvInstrumentationLibrary>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../eng/dependencies/Qyl.Telemetry.Tests/Qyl.Telemetry.Tests.Capture/Qyl.Telemetry.Tests.Capture.csproj" />
     <ProjectReference Include="../../eng/fixtures/Qyl.Telemetry.TestFixtures/Qyl.Telemetry.TestFixtures.csproj" />
     <ProjectReference Include="../../eng/build/build.csproj" />
     <ProjectReference Include="../../src/Qyl.Telemetry.AutoInstrumentation.SourceGenerators/Qyl.Telemetry.AutoInstrumentation.SourceGenerators.csproj" />

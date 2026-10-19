@@ -5,6 +5,7 @@
     <OtelSemConvInstrumentationLibrary>true</OtelSemConvInstrumentationLibrary>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../dependencies/Qyl.Telemetry.Tests/Qyl.Telemetry.Tests.Capture/Qyl.Telemetry.Tests.Capture.csproj" />
     <ProjectReference Include="../Qyl.Telemetry.TestFixtures/Qyl.Telemetry.TestFixtures.csproj" />
     <ProjectReference Include="../../../src/Qyl.Telemetry.Hosting/Qyl.Telemetry.Hosting.csproj" />
     <PackageReference Include="Grpc.Net.Client" />

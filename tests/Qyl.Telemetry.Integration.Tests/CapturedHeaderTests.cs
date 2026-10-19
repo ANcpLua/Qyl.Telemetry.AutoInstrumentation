@@ -2,44 +2,12 @@ using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Primitives;
 using Qyl.Telemetry.AutoInstrumentation.Internal;
-using Qyl.Telemetry.TestFixtures;
 
 namespace Qyl.Telemetry.Integration.Tests;
 
 [TestClass]
 public sealed class CapturedHeaderTests
 {
-    private const string CapturedArrayKey = "http.request.header.x-multi";
-
-    [TestMethod]
-    [DataRow]
-    [DataRow("first", "first", "", "comma,kept")]
-    public void Shared_array_check_accepts_exact_order_duplicates_and_empty_values(params string[] expected)
-    {
-        var attributes = new Dictionary<string, object?> { [CapturedArrayKey] = expected.ToArray() };
-        CapturedAttributeAssertions.RequireValues(attributes, CapturedArrayKey, expected);
-    }
-
-    [TestMethod]
-    [DataRow(false, null, "<missing>")]
-    [DataRow(true, null, "null")]
-    [DataRow(true, "first", "String: \"first\"")]
-    [DataRow(true, new[] { "", "first", "first" }, "String[]: [\"\", \"first\", \"first\"]")]
-    [DataRow(true, new[] { "first", "" }, "String[]: [\"first\", \"\"]")]
-    [DataRow(true, new[] { "first", "first" }, "String[]: [\"first\", \"first\"]")]
-    public void Shared_array_check_reports_missing_wrong_type_and_changed_values(bool present, object? value, string actual)
-    {
-        var attributes = new Dictionary<string, object?>();
-        if (present) attributes.Add(CapturedArrayKey, value);
-
-        var failure = Assert.ThrowsExactly<InvalidOperationException>(() =>
-            CapturedAttributeAssertions.RequireValues(attributes, CapturedArrayKey, ["first", "first", ""]));
-
-        Assert.Contains(CapturedArrayKey, failure.Message);
-        Assert.Contains("expected string[] [\"first\", \"first\", \"\"]", failure.Message);
-        Assert.Contains($"actual {actual}.", failure.Message);
-    }
-
     [TestMethod]
     public void Grpc_message_capture_preserves_text_and_binary_headers_then_trailers()
     {

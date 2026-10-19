@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Qyl.Telemetry.AutoInstrumentation;
 using Qyl.Telemetry.TestFixtures;
+using Qyl.Telemetry.Tests.Capture;
 
 namespace Qyl.Telemetry.Integration.Tests;
 
@@ -44,6 +45,7 @@ internal sealed class NativeCaptureFixture(string executable, string output)
             .Single(static line => line.StartsWith("{\"status\":", StringComparison.Ordinal)));
         Assert.AreEqual("passed", document.RootElement.GetProperty("status").GetString());
         Assert.AreEqual(profile, document.RootElement.GetProperty("profile").GetString());
+        Assert.AreEqual(NativeCaptureReport.SchemaVersion, document.RootElement.GetProperty("schema_version").GetInt32());
         Assert.IsFalse(document.RootElement.GetProperty("dynamicCodeSupported").GetBoolean());
         Assert.IsEmpty(run.Stderr);
     }
