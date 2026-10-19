@@ -10,7 +10,7 @@ automatic-instrumentation contract is a coverage comparison, not a package depen
 `Qyl.Telemetry.Hosting` uses the OpenTelemetry SDK and OTLP exporter to process and transport
 the resulting telemetry; convention bindings come from qyl's own generated registry packages.
 
-Roslyn interceptors are supported by this repository's .NET SDK 10.0.401. See the official
+Roslyn interceptors are supported by this repository's .NET SDK 10.0.402. See the official
 [`interceptors.md`](https://github.com/dotnet/roslyn/blob/main/docs/features/interceptors.md)
 contract.
 

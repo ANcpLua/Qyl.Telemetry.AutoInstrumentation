@@ -5,6 +5,10 @@ Notable changes to the `Qyl.Telemetry.*` package family. Versions are owned by `
 that exact version, creates the matching `v*` tag and GitHub release, and waits for all package indexes. Indexed
 packages are then exercised in clean managed and NativeAOT consumers.
 
+## [28.2.1] - 2026-10-19
+
+- Rebuild the instrumentation and hosting package family with .NET SDK 10.0.402 and ANcpLua.Analyzers 2.1.8. Public API unchanged; no runtime behavior change.
+
 ## [28.2.0] - 2026-10-17
 
 - Honor explicitly selected `mcp-param-*` headers and metadata without a hidden prefix exclusion.

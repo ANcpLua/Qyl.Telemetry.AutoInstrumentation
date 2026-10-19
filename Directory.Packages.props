@@ -5,7 +5,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageVersion Include="ANcpLua.Analyzers" Version="2.1.2" />
+    <PackageVersion Include="ANcpLua.Analyzers" Version="2.1.8" />
     <PackageVersion Include="ANcpLua.Roslyn.Utilities.Sources" Version="3.0.0" />
     <PackageVersion Include="Azure.Core" Version="1.63.0" />
     <PackageVersion Include="Azure.Storage.Blobs" Version="12.30.1" />
