@@ -1,3 +1,3 @@
 # Qyl.Telemetry.AutoInstrumentation
 
-.NET instrumentation and hosting; contracts/otel-dotnet-auto.upstream.yaml is a coverage comparison, not a runtime dependency. eng/build.sh lists Fallout targets. Demo receivers capture OTLP; Collector persistence is tested in qyl. Databases/brokers use eng/testbed and .railway/railway.ts; README documents access. SKILL.md covers releases and consumers.
+.NET instrumentation and hosting. HTTP/gRPC fixtures use Qyl.Telemetry.Tests.Capture in the pinned eng/dependencies/Qyl.Telemetry.Tests submodule; eng/build.sh initializes it. contracts/otel-dotnet-auto.upstream.yaml compares coverage, not runtime dependencies. Collector persistence is tested in qyl. Databases/brokers use eng/testbed and .railway/railway.ts. README documents commands; SKILL.md covers releases and consumers.
