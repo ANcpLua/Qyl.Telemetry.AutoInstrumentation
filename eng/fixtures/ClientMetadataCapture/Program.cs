@@ -15,13 +15,13 @@ using OpenTelemetry.Trace;
 using Qyl;
 using Qyl.Telemetry.TestFixtures;
 using Qyl.Telemetry.Tests.Capture;
-using static Qyl.Telemetry.Tests.Capture.CaptureAssert;
+using static Qyl.Telemetry.Tests.Capture.CapturedActivityAssertions;
 using Qyl.Telemetry.SemanticConventions.Names;
 using StatusCode = Grpc.Core.StatusCode;
 
 var scenario = ClientCaptureScenario.Parse(args);
 var profile = scenario.Profile;
-CaptureAssert.NativeAot();
+RequireNativeAot();
 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 var serverBuilder = WebApplication.CreateSlimBuilder();
 serverBuilder.Logging.ClearProviders();
@@ -109,7 +109,7 @@ using (var host = builder.Build())
         tag.Key.StartsWith("rpc.response.metadata.", StringComparison.Ordinal)) != true, "parent decorated");
     Require(host.Services.GetRequiredService<TracerProvider>().ForceFlush(), "flush failed");
     var snapshots = exporter.GetSnapshots();
-    CaptureAssert.UniqueSpans(snapshots);
+    RequireUniqueSpanIdentities(snapshots);
     var grpc = snapshots.Where(static span => span.Source == QylTelemetryNames.VendorActivitySources.GrpcNetClient).ToArray();
     var active = scenario.EmitsSpans;
     string[] expectedMethods = active
@@ -125,7 +125,7 @@ using (var host = builder.Build())
     foreach (var span in grpc)
     {
         Require(span is { Operation: "Grpc.Net.Client.GrpcOut", Kind: ActivityKind.Client, Status: ActivityStatusCode.Unset }, "native ownership/status changed");
-        CaptureAssert.Parent(span, expectedParent!.Value);
+        RequireParentContext(span, expectedParent!.Value);
         var method = (string)span.Tags["grpc.method"]!;
         var status = Convert.ToInt32(span.Tags["grpc.status_code"], System.Globalization.CultureInfo.InvariantCulture);
         Require(status == (method.EndsWith("Cancel", StringComparison.Ordinal) ? 1 : method.EndsWith("Unavailable", StringComparison.Ordinal) ? 14 : 0), "native status tag changed");
@@ -133,31 +133,31 @@ using (var host = builder.Build())
         var responseCaptured = scenario.ResponseCaptured;
         if (requestCaptured && profile != ClientCaptureProfiles.BinaryOnly)
         {
-            CaptureAssert.Values(span.Tags, "rpc.request.metadata.x-demo-md", ["mv1"]);
-            CaptureAssert.Values(span.Tags, "rpc.request.metadata.x-request-id", ["dash"]);
-            CaptureAssert.Values(span.Tags, "rpc.request.metadata.x_request_id", ["underscore"]);
-            CaptureAssert.Values(span.Tags, "rpc.request.metadata.x.request.id", ["dot"]);
-            CaptureAssert.Values(span.Tags, "rpc.request.metadata.x-multi", ["first", "first", "", "comma,kept"]);
+            RequireStringValues(span.Tags, "rpc.request.metadata.x-demo-md", ["mv1"]);
+            RequireStringValues(span.Tags, "rpc.request.metadata.x-request-id", ["dash"]);
+            RequireStringValues(span.Tags, "rpc.request.metadata.x_request_id", ["underscore"]);
+            RequireStringValues(span.Tags, "rpc.request.metadata.x.request.id", ["dot"]);
+            RequireStringValues(span.Tags, "rpc.request.metadata.x-multi", ["first", "first", "", "comma,kept"]);
         }
         else if (!requestCaptured) Require(!span.Tags.Keys.Any(static key => key.StartsWith("rpc.request.metadata.", StringComparison.Ordinal)), "request not opt-in");
         if (responseCaptured && profile != ClientCaptureProfiles.BinaryOnly && !method.EndsWith("Unavailable", StringComparison.Ordinal))
         {
-            CaptureAssert.Values(span.Tags, "rpc.response.metadata.x-demo-res-md", ["sv1"]);
+            RequireStringValues(span.Tags, "rpc.response.metadata.x-demo-res-md", ["sv1"]);
             if (method.EndsWith("Cancel", StringComparison.Ordinal))
             {
-                CaptureAssert.Values(span.Tags, "rpc.response.metadata.x-overlap", ["from-header"]);
+                RequireStringValues(span.Tags, "rpc.response.metadata.x-overlap", ["from-header"]);
                 Require(!span.Tags.ContainsKey("rpc.response.metadata.x-demo-trailer-md"), "invented cancellation trailer");
             }
             else
             {
-                CaptureAssert.Values(span.Tags, "rpc.response.metadata.x-demo-trailer-md", ["tv1"]);
-                CaptureAssert.Values(span.Tags, "rpc.response.metadata.x-overlap", ["from-header", "from-trailer"]);
+                RequireStringValues(span.Tags, "rpc.response.metadata.x-demo-trailer-md", ["tv1"]);
+                RequireStringValues(span.Tags, "rpc.response.metadata.x-overlap", ["from-header", "from-trailer"]);
             }
         }
         else if (!responseCaptured || method.EndsWith("Unavailable", StringComparison.Ordinal)) Require(!span.Tags.Keys.Any(static key => key.StartsWith("rpc.response.metadata.", StringComparison.Ordinal)), "invented or unselected response");
-        if (requestCaptured) CaptureAssert.Values(span.Tags, "rpc.request.metadata.trace-bin", ["AQID"]);
+        if (requestCaptured) RequireStringValues(span.Tags, "rpc.request.metadata.trace-bin", ["AQID"]);
         if (responseCaptured && !method.EndsWith("Unavailable", StringComparison.Ordinal))
-            CaptureAssert.Values(span.Tags, "rpc.response.metadata.trace-bin", method.EndsWith("Cancel", StringComparison.Ordinal)
+            RequireStringValues(span.Tags, "rpc.response.metadata.trace-bin", method.EndsWith("Cancel", StringComparison.Ordinal)
                 ? ["YWJj"] : ["YWJj", "AAH/"]);
         Require(!span.Tags.ContainsKey("rpc.request.metadata.unselected"), "unselected metadata captured");
     }
@@ -176,9 +176,9 @@ using (var observer = new ActivityListener())
         new CallOptions(RequestMetadata(), cancellationToken: timeout.Token), []);
     Require((await unary.ResponseAsync).Length is 0, "post-disposal unary result changed");
 }
-CaptureAssert.AfterDisposal(afterDispose.ToArray(), QylTelemetryNames.VendorActivitySources.GrpcNetClient);
+RequireCaptureStopped(afterDispose.ToArray(), QylTelemetryNames.VendorActivitySources.GrpcNetClient);
 await server.StopAsync(timeout.Token);
-Console.WriteLine(NativeCaptureReport.Serialize(profile, exporter.GetSnapshots(), afterDispose.ToArray()));
+Console.WriteLine(ActivityCaptureReport.Serialize(profile, exporter.GetSnapshots(), afterDispose.ToArray()));
 
 Method<byte[], byte[]> Method(string name, MethodType type) => new(type, "qyl.Capture", name, marshaller, marshaller);
 

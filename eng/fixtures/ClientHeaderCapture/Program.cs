@@ -13,11 +13,11 @@ using OpenTelemetry.Trace;
 using Qyl;
 using Qyl.Telemetry.TestFixtures;
 using Qyl.Telemetry.Tests.Capture;
-using static Qyl.Telemetry.Tests.Capture.CaptureAssert;
+using static Qyl.Telemetry.Tests.Capture.CapturedActivityAssertions;
 
 var scenario = ClientCaptureScenario.Parse(args);
 var profile = scenario.Profile;
-CaptureAssert.NativeAot();
+RequireNativeAot();
 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 var serverBuilder = WebApplication.CreateSlimBuilder();
 serverBuilder.Logging.ClearProviders();
@@ -84,7 +84,7 @@ using (var host = builder.Build())
     Require(host.Services.GetRequiredService<TracerProvider>().ForceFlush(), "flush failed");
     var active = scenario.EmitsSpans;
     var spans = exporter.GetSnapshots();
-    CaptureAssert.UniqueSpans(spans);
+    RequireUniqueSpanIdentities(spans);
     string[] expectedPaths = active ? ["/empty", "/fail", "/ok"] : [];
     var actualPaths = spans.Select(static span => span.Path)
         .Order(StringComparer.Ordinal).ToArray();
@@ -98,29 +98,29 @@ using (var host = builder.Build())
         var responseCaptured = scenario.ResponseCaptured;
         if (requestCaptured)
         {
-            CaptureAssert.Values(span.Tags, "http.request.header.x-tenant-id", ["tenant"]);
-            CaptureAssert.Values(span.Tags, "http.request.header.x-request-id", ["dash"]);
-            CaptureAssert.Values(span.Tags, "http.request.header.x_request_id", ["underscore"]);
-            CaptureAssert.Values(span.Tags, "http.request.header.x.request.id", ["dot"]);
-            CaptureAssert.Values(span.Tags, "http.request.header.x-custom-multi", ["first", "first", "", "comma,kept"]);
+            RequireStringValues(span.Tags, "http.request.header.x-tenant-id", ["tenant"]);
+            RequireStringValues(span.Tags, "http.request.header.x-request-id", ["dash"]);
+            RequireStringValues(span.Tags, "http.request.header.x_request_id", ["underscore"]);
+            RequireStringValues(span.Tags, "http.request.header.x.request.id", ["dot"]);
+            RequireStringValues(span.Tags, "http.request.header.x-custom-multi", ["first", "first", "", "comma,kept"]);
             if (path != "/empty")
             {
-                CaptureAssert.Values(span.Tags, "http.request.header.content-type", ["application/custom"]);
-                CaptureAssert.Values(span.Tags, "http.request.header.content-disposition", ["attachment; filename=sample.txt"]);
+                RequireStringValues(span.Tags, "http.request.header.content-type", ["application/custom"]);
+                RequireStringValues(span.Tags, "http.request.header.content-disposition", ["attachment; filename=sample.txt"]);
             }
             else Require(!span.Tags.ContainsKey("http.request.header.content-type"), "invented request content header");
         }
         else Require(!span.Tags.Keys.Any(static key => key.StartsWith("http.request.header.", StringComparison.Ordinal)), "request capture was not opt-in");
         if (responseCaptured && path == "/ok")
         {
-            CaptureAssert.Values(span.Tags, "http.response.header.x-ratelimit-remaining", ["7"]);
-            CaptureAssert.Values(span.Tags, "http.response.header.content-type", ["application/result"]);
-            CaptureAssert.Values(span.Tags, "http.response.header.x-custom-multi", ["response-a", "response-b"]);
+            RequireStringValues(span.Tags, "http.response.header.x-ratelimit-remaining", ["7"]);
+            RequireStringValues(span.Tags, "http.response.header.content-type", ["application/result"]);
+            RequireStringValues(span.Tags, "http.response.header.x-custom-multi", ["response-a", "response-b"]);
         }
         else Require(!span.Tags.Keys.Any(static key => key.StartsWith("http.response.header.", StringComparison.Ordinal)), "invented or unselected response header");
         Require(!span.Tags.ContainsKey("http.request.header.unselected"), "unselected header captured");
         Require(span.Status == (path == "/fail" ? ActivityStatusCode.Error : ActivityStatusCode.Unset), "native status changed");
-        CaptureAssert.Parent(span, expectedParent!.Value);
+        RequireParentContext(span, expectedParent!.Value);
     }
     await host.StopAsync(timeout.Token);
 }
@@ -136,9 +136,9 @@ using (var observer = new ActivityListener())
     using var request = Request("/empty", false);
     using var response = await http.SendAsync(request, timeout.Token);
 }
-CaptureAssert.AfterDisposal(afterDispose.ToArray(), "System.Net.Http");
+RequireCaptureStopped(afterDispose.ToArray(), "System.Net.Http");
 await server.StopAsync(timeout.Token);
-Console.WriteLine(NativeCaptureReport.Serialize(profile, exporter.GetSnapshots(), afterDispose.ToArray()));
+Console.WriteLine(ActivityCaptureReport.Serialize(profile, exporter.GetSnapshots(), afterDispose.ToArray()));
 
 static HttpRequestMessage Request(string path, bool content)
 {
