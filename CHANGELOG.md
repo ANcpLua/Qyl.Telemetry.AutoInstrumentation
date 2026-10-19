@@ -7,6 +7,7 @@ packages are then exercised in clean managed and NativeAOT consumers.
 
 ## [28.2.2] - 2026-10-19
 
+- Preserve compiler-host helper exclusions when an isolated NuGet cache has no trailing directory separator.
 - Preserve nullable annotations on generated receivers, parameters and returns, including nullable generic arguments and array ranks. Keep overload matching annotation-insensitive.
 - Remove blanket warning suppression from generated interceptors and build metadata. Scope obsolete warnings to their forwarded calls while retaining diagnostics at the original caller.
 - Leave optional argument defaults with the original method instead of copying them into interceptor declarations.

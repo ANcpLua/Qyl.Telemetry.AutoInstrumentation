@@ -31,8 +31,8 @@
     <PackageReference Include="ANcpLua.Roslyn.Utilities.Sources" PrivateAssets="all" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
     <!-- Exclude runtime-only helpers with no generator callers from the compiler-host assembly. -->
-    <Compile Remove="$(NuGetPackageRoot)ancplua.roslyn.utilities.sources/**/Data/DataReaderExtensions.cs" />
-    <Compile Remove="$(NuGetPackageRoot)ancplua.roslyn.utilities.sources/**/Guard.Path.cs" />
+    <Compile Remove="$([MSBuild]::EnsureTrailingSlash('$(NuGetPackageRoot)'))ancplua.roslyn.utilities.sources/**/Data/DataReaderExtensions.cs" />
+    <Compile Remove="$([MSBuild]::EnsureTrailingSlash('$(NuGetPackageRoot)'))ancplua.roslyn.utilities.sources/**/Guard.Path.cs" />
   </ItemGroup>
 
 </Project>
