@@ -6,31 +6,19 @@ namespace Qyl.Build.Smoke;
 /// The package smoke test. A Qyl.Telemetry.Hosting package consumer and a ProjectReference consumer run
 /// the same program managed and NativeAOT, each must print the verified stdout, each NativeAOT publish
 /// must be free of trim, AOT and analyzer warnings, and a SqlClient-only package consumer must receive
-/// the SQLCLIENT trace and metric generator manifest. Against a published version the packages come
-/// from nuget.org and the ProjectReference consumer is skipped.
+/// the SQLCLIENT trace and metric generator manifest.
 /// </summary>
 static partial class SmokeGate
 {
     private const string Fixture = "Smoke";
 
-    public static void Run(string? publishedVersion)
+    public static void Run()
     {
-        var published = !string.IsNullOrWhiteSpace(publishedVersion);
-        var mode = published ? "published" : "local";
-        string version;
-        if (published)
-        {
-            version = publishedVersion!.Trim();
-        }
-        else
-        {
-            DotNet.Build(Repo.GeneratorProject);
-            version = LocalFeed.EnsurePacked();
-        }
-
+        DotNet.Build(Repo.GeneratorProject);
+        var version = LocalFeed.EnsurePacked();
         var verified = FixtureWorkspace.ReadFixture(Fixture, "verified/stdout.txt");
 
-        var packageConsumer = FixtureWorkspace.Create("smoke-package-reference", published);
+        var packageConsumer = FixtureWorkspace.Create("smoke-package-reference");
         FixtureWorkspace.CopyFixture(Fixture, packageConsumer, "Program.cs");
         ConsumerFixture.WriteProject(packageConsumer / "Consumer.csproj", "Microsoft.NET.Sdk",
             "    <OutputType>Exe</OutputType>\n" + ConsumerFixture.EmitGeneratedProperties +
@@ -41,7 +29,7 @@ static partial class SmokeGate
             ConsumerFixture.RemoveGeneratedItem);
         RunConsumer("package-reference", packageConsumer, verified);
 
-        var sqlClientConsumer = FixtureWorkspace.Create("smoke-sqlclient-package", published);
+        var sqlClientConsumer = FixtureWorkspace.Create("smoke-sqlclient-package");
         File.Copy(Repo.Fixtures / Fixture / "SqlClient" / "Program.cs", sqlClientConsumer / "Program.cs");
         ConsumerFixture.WriteProject(sqlClientConsumer / "Consumer.csproj", "Microsoft.NET.Sdk",
             "    <OutputType>Exe</OutputType>\n" + ConsumerFixture.EmitGeneratedProperties,
@@ -49,26 +37,23 @@ static partial class SmokeGate
             ConsumerFixture.RemoveGeneratedItem);
         AssertSqlClientPackageAssets(sqlClientConsumer);
 
-        if (!published)
-        {
-            var projectReferenceConsumer = FixtureWorkspace.Create("smoke-project-reference");
-            FixtureWorkspace.CopyFixture(Fixture, projectReferenceConsumer, "Program.cs");
-            ConsumerFixture.WriteProject(projectReferenceConsumer / "Consumer.csproj", "Microsoft.NET.Sdk",
-                "    <OutputType>Exe</OutputType>\n" + ConsumerFixture.EmitGeneratedProperties +
-                "    <DefineConstants>$(DefineConstants);QYL_PROJECTREFERENCE_SMOKE</DefineConstants>\n",
-                $"    <ProjectReference Include=\"{Repo.AutoHostingProject}\" />\n" +
-                $"    <ProjectReference Include=\"{Repo.GeneratorProject}\"\n" +
-                "                      Condition=\"'$(PublishAot)' != 'true'\"\n" +
-                "                      OutputItemType=\"Analyzer\"\n" +
-                "                      ReferenceOutputAssembly=\"false\"\n" +
-                "                      GlobalPropertiesToRemove=\"PublishAot;PublishSingleFile;PublishTrimmed;RuntimeIdentifier;RuntimeIdentifiers;SelfContained\" />\n" +
-                $"    <Analyzer Include=\"{Repo.GeneratorAssembly}\" Condition=\"'$(PublishAot)' == 'true'\" />\n" +
-                ConsumerFixture.RemoveGeneratedItem,
-                Repo.CoreBuildTargets);
-            RunConsumer("project-reference", projectReferenceConsumer, verified);
-        }
+        var projectReferenceConsumer = FixtureWorkspace.Create("smoke-project-reference");
+        FixtureWorkspace.CopyFixture(Fixture, projectReferenceConsumer, "Program.cs");
+        ConsumerFixture.WriteProject(projectReferenceConsumer / "Consumer.csproj", "Microsoft.NET.Sdk",
+            "    <OutputType>Exe</OutputType>\n" + ConsumerFixture.EmitGeneratedProperties +
+            "    <DefineConstants>$(DefineConstants);QYL_PROJECTREFERENCE_SMOKE</DefineConstants>\n",
+            $"    <ProjectReference Include=\"{Repo.AutoHostingProject}\" />\n" +
+            $"    <ProjectReference Include=\"{Repo.GeneratorProject}\"\n" +
+            "                      Condition=\"'$(PublishAot)' != 'true'\"\n" +
+            "                      OutputItemType=\"Analyzer\"\n" +
+            "                      ReferenceOutputAssembly=\"false\"\n" +
+            "                      GlobalPropertiesToRemove=\"PublishAot;PublishSingleFile;PublishTrimmed;RuntimeIdentifier;RuntimeIdentifiers;SelfContained\" />\n" +
+            $"    <Analyzer Include=\"{Repo.GeneratorAssembly}\" Condition=\"'$(PublishAot)' == 'true'\" />\n" +
+            ConsumerFixture.RemoveGeneratedItem,
+            Repo.CoreBuildTargets);
+        RunConsumer("project-reference", projectReferenceConsumer, verified);
 
-        Log.Information("smoketest-ok mode={Mode} version={Version} rid={Rid}", mode, version, Repo.RuntimeIdentifier);
+        Log.Information("smoketest-ok version={Version} rid={Rid}", version, Repo.RuntimeIdentifier);
     }
 
     private static void RunConsumer(string name, AbsolutePath directory, string verified)

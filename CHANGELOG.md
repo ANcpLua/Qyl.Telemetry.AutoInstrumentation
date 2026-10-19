@@ -1,9 +1,7 @@
 # Changelog
 
-Notable changes to the `Qyl.Telemetry.*` package family. Versions are owned by `<Version>` in
-`Directory.Build.props`. The local release gates run before `./release.sh` packs and publishes
-that exact version, creates the matching `v*` tag and GitHub release, and waits for all package indexes. Indexed
-packages are then exercised in clean managed and NativeAOT consumers.
+Notable changes to the `Qyl.Telemetry.*` package family, one entry per `<Version>` in
+`Directory.Build.props`.
 
 ## [28.2.3] - 2026-10-19
 

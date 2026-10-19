@@ -16,8 +16,8 @@
     <PackageVersion Include="Elastic.Transport" Version="1.1.0" />
     <PackageVersion Include="ErrorProne.NET.CoreAnalyzers" Version="0.9.0-beta.4" />
     <PackageVersion Include="ErrorProne.NET.Structs" Version="0.6.1-beta.1" />
-    <!-- The build project under eng/build: Fallout, the contract YAML reader, the typed collector
-         client models and the OTLP protobuf messages OtlpEvidence decodes. -->
+    <!-- The build project under eng/build: Fallout, the contract YAML reader and the OTLP protobuf
+         messages OtlpEvidence decodes. -->
     <!-- Stay on 10.x. Fallout's 11.0.x packages on nuget.org are unlisted builds from May 2026, older than 10.4.0. -->
     <PackageVersion Include="Fallout.Common" Version="10.4.0" />
     <PackageVersion Include="JetBrains.Annotations" Version="2026.2.0" />

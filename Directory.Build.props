@@ -28,8 +28,6 @@
 
     <Version>28.2.3</Version>
     <Authors>qyl</Authors>
-    <!-- The GitHub repository was NOT renamed with the packages; this must stay truthful to
-         the real origin or the publish workflow's provenance check rejects the nuspec. -->
     <RepositoryUrl>https://github.com/ANcpLua/Qyl.Telemetry.AutoInstrumentation</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>

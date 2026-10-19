@@ -30,12 +30,12 @@ static class OtlpWireEvidence
 
     private static AbsolutePath VerifiedPath => Repo.Fixtures / Fixture / "verified" / "trace-evidence.json";
 
-    public static void Run(bool updateVerified, string? publishedVersion)
+    public static void Run(bool updateVerified)
     {
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            RunGate(updateVerified, publishedVersion);
+            RunGate(updateVerified);
         }
         finally
         {
@@ -43,13 +43,10 @@ static class OtlpWireEvidence
         }
     }
 
-    private static void RunGate(bool updateVerified, string? publishedVersion)
+    private static void RunGate(bool updateVerified)
     {
-        var published = !string.IsNullOrWhiteSpace(publishedVersion);
-        Gate.Require(!(published && updateVerified), "--update-verified rewrites the evidence from this checkout; it does not combine with --published-version");
-        var version = published ? publishedVersion!.Trim() : LocalFeed.EnsurePacked();
-
-        var directory = FixtureWorkspace.Create("otlp-evidence-consumer", published);
+        var version = LocalFeed.EnsurePacked();
+        var directory = FixtureWorkspace.Create("otlp-evidence-consumer");
         FixtureWorkspace.CopyFixture(Fixture, directory, "Program.cs");
         var project = directory / "Consumer.csproj";
         ConsumerFixture.WriteProject(project, "Microsoft.NET.Sdk",
@@ -83,11 +80,7 @@ static class OtlpWireEvidence
         Gate.Require(VerifiedPath.FileExists(), $"missing OTLP verified evidence: {VerifiedPath}");
         var expected = CanonicalJson.Render(File.ReadAllText(VerifiedPath));
         Gate.Require(rendered == expected, () => $"typed OTLP receiver evidence mismatch\n{ConsumerFixture.Diff(expected, rendered)}\nexpected: {expected}\nactual: {rendered}");
-
-        if (published)
-            Log.Information("otlp-receiver-published-ok version={Version}", version);
-        else
-            Log.Information("otlp-receiver-evidence-ok");
+        Log.Information("otlp-receiver-evidence-ok");
     }
 
     private sealed record OtlpRequest(string Method, string Path, string ContentType, ExportTraceServiceRequest Message);

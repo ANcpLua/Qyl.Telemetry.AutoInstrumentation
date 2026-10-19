@@ -1,15 +1,9 @@
-# The local build and release toolchain. `mise install` installs these pinned versions;
-# dotnet also keeps global.json, which dotnet itself reads. Weaver serves ./eng/build.sh LiveCheck.
+# `mise install` installs the toolchain. dotnet matches global.json; weaver serves ./eng/build.sh LiveCheck.
 [tools]
 "dotnet" = "10.0.402"
 "github:open-telemetry/weaver" = "0.27.0"
 
 [tasks.check]
-description = "The gate before a push or a release: ./eng/build.sh Check"
+description = "./eng/build.sh Check, the CI gate"
 quiet = true
 run = "./eng/build.sh Check"
-
-[tasks.check-full]
-description = "Everything, on demand: ./eng/build.sh CheckFull"
-quiet = true
-run = "./eng/build.sh CheckFull"

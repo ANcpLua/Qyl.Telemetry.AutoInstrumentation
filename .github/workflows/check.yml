@@ -1,9 +1,5 @@
-# The gate, reporting only: `mise run check` (./eng/build.sh Check: contracts, release builds,
-# the public API report (never fails), generator snapshots, package layout, consumer behavior
-# with the NativeAOT consumer) on every push to main and every pull request. Nothing publishes
-# or waits for this run. A manual run with full=true runs `mise run check-full` (./eng/build.sh
-# CheckFull: the NativeAOT publish matrix, the thirty demos, live check, smoke, web API AOT demo,
-# OTLP wire evidence) on this one Linux runner. A failed run keeps artifacts/logs as gate-log.
+# mise run check (./eng/build.sh Check), full output in the job log. Its consumer behavior publishes
+# NativeAOT package consumers, one of them running the generated DbCommand interceptor.
 name: check
 
 on:
@@ -11,11 +7,6 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
-    inputs:
-      full:
-        description: Run mise run check-full instead of mise run check
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -27,7 +18,7 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ inputs.full && 120 || 20 }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -40,14 +31,7 @@ jobs:
       - name: NativeAOT prerequisites
         run: dpkg -s zlib1g-dev >/dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y --no-install-recommends zlib1g-dev; }
 
-      - name: Gate
-        run: mise run ${{ inputs.full && 'check-full' || 'check' }}
-
-      - name: Keep the gate log
-        if: failure()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: gate-log
-          path: artifacts/logs/
-          if-no-files-found: ignore
-          retention-days: 7
+      - name: Check
+        run: mise run check
+        env:
+          QYL_VERBOSE: 1

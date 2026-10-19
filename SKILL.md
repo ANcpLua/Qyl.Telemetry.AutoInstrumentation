@@ -1,43 +1,17 @@
-# Qyl.Telemetry.AutoInstrumentation: release and pins
+# Qyl.Telemetry.AutoInstrumentation: build and release
 
-Use the existing clone on `main`, with one writer. Do not create an agent, branch, worktree or PR unless requested. Current owner instructions and verified source take precedence over historical plans. CI reports; use the repository’s actual release script and existing Vitals credentials.
+## Facts
 
-## This repository
+- Packages: every packable `src/` project ships to NuGet at one version: `Qyl.Telemetry.AutoInstrumentation`, `.DiagnosticListeners`, `.EntityFrameworkCore`, `.Hosting`, `.SqlClient` and `Qyl.Telemetry.Hosting`. `<IsPackable>false</IsPackable>` keeps a project out.
+- Version: `<Version>` in `Directory.Build.props`. Its major is the generated-code ABI (`QylGeneratedCodeAbi.V<major>`). `Check` fails unless the top `CHANGELOG.md` entry is `## [<Version>] - YYYY-MM-DD`. nuget.org versions are immutable.
+- Public API: `Check` rewrites `src/*/PublicAPI.txt` and reports `api: +N -M changed` or `api: unchanged`. A removed or changed line is a major bump, added lines only are minor.
+- Semantic conventions: the `Qyl.Telemetry.SemanticConventions*` pins in `Directory.Packages.props`. `LiveCheck` judges against the registry tag `v` + that pin.
+- NuGet key: `~/.config/vitals/nuget-qyl-manual-publish-key` (Vitals "qyl-dev manual publish and release (NuGet)"). `release.sh` reads it; never print it.
 
-- Publishes every packable `src/` project to NuGet (`Qyl.Telemetry.AutoInstrumentation`, `.DiagnosticListeners`, `.EntityFrameworkCore`, `.Hosting`, `.SqlClient`, `Qyl.Telemetry.Hosting`). A new packable project ships automatically; one that must not ship sets `<IsPackable>false</IsPackable>`.
-- Version source: `<Version>` in `Directory.Build.props`. The first package-affecting change after a release bumps it and opens its `## [x.y.z] - YYYY-MM-DD` entry on top of `CHANGELOG.md` in the same commit; later changes add to that entry. The entry becomes the GitHub release notes.
-- Bump: Check rewrites `src/*/PublicAPI.txt` to the public API of the six packages and notes `api: +N -M changed` or `api: unchanged`; it informs, never blocks. Read `git diff v<last release> -- 'src/*/PublicAPI.txt'`: a removed or changed line is major, only added lines minor, none patch.
-- Key: Vitals entry "qyl-dev manual publish and release (NuGet)", `~/.config/vitals/nuget-qyl-manual-publish-key`, read by the script. Never print, paste, commit or log it. Entry missing or note expired: stop and tell the owner.
-- Upstream pin: `Qyl.Telemetry.SemanticConventions*` in `Directory.Packages.props`, the one place that names the release; the live check's registry tag derives from it.
+## Commands
 
-## Refresh changed inputs
-
-1. Pull when the tree is clean and no other writer owns it. Install missing tools and restore when package or lockfile inputs change.
-2. Compare the SemanticConventions pin with the last entry of `curl -fsSL https://api.nuget.org/v3-flatcontainer/qyl.telemetry.semanticconventions/index.json`; if the index is ahead, re-pin first.
-
-## Release
-
-1. `main` holds `<Version>` with its CHANGELOG entry on top, gate green, pushed.
-2. `./release.sh <x.y.z>` (`--dry-run` first only when a step is new or unsure; the script refuses before publishing when anything is off). It returns before indexing, once NuGet accepted the push and the tag and GitHub release exist; a detached job runs `./eng/build.sh VerifyRelease --published-version <x.y.z>` (index wait for all six, the package smoke against nuget.org) and then the snapshot refresh (`published-versions.yaml` in qyl.at), logging to `artifacts/release-<x.y.z>-verify.log`. Do not run the snapshot refresh by hand.
-3. `./release.sh --wait <x.y.z>` follows that job until its log ends in VERIFIED or FAILED. One job owns the attempt. Continue independent work while it waits; do not restart a healthy job after a fixed interval or duplicate its registry polling. Exit 3 = not indexed in time, `./release.sh --verify <x.y.z>` checks again; any other FAILED after publication is a patch release.
-4. VERIFIED: notify the consumers.
-
-## Consumers
-
-| Consumer | Re-pins |
-|---|---|
-| qyl | `Version.props` `QylTelemetryVersion` |
-| qyl.at | `src/data/site.ts` |
-
-After VERIFIED, update authorized consumers in their existing clones, keeping package identity and deployment order intact. Coordinate with an existing writer when necessary; do not create an agent merely to notify a consumer.
-
-## Re-pin when SemanticConventions releases
-
-Group re-pins with the next relevant change; compare registry versions once per wave and reuse that evidence until the inputs change:
-
-1. Set the new version in `Directory.Packages.props`.
-2. `mise exec -- dotnet restore Qyl.Telemetry.AutoInstrumentation.slnx` (`--force-evaluate` where a `packages.lock.json` exists). NU1102 for a version the index lists is NuGet's 30-minute HTTP cache: delete that id's `list_<id>.dat` under `dotnet nuget locals http-cache --list`, restore again.
-3. Run affected checks, reusing valid results; commit `chore: pin Qyl.Telemetry.SemanticConventions <version>`; push `main`.
-4. If the pin changes what ships, record it under the next `<Version>` (bump it if the current one is released) and release: one release per repo per wave.
-
-This repo and SemanticConventions both feed qyl, which re-pins both in one commit once both are indexed: record whether SemanticConventions moved in the same wave.
+- `make check` (`./eng/build.sh Check`, the CI gate): contracts, Release builds, the public API report, generator snapshots, package layout, consumer behavior including the NativeAOT consumer.
+- `make check-full` (`./eng/build.sh CheckFull`): adds the NativeAOT publish matrix, the thirty demo lanes, `LiveCheck`, `Smoke`, `WebApiAotDemo` and `OtlpEvidence`.
+- `make help`: every target with its parameters.
+- `mise exec -- dotnet restore Qyl.Telemetry.AutoInstrumentation.slnx`: restore after a pin change. NU1102 for a version nuget.org lists is NuGet's HTTP cache: delete that id's `list_<id>.dat` under `dotnet nuget locals http-cache --list` and restore again.
+- `./release.sh`: packs at `<Version>` (`./eng/build.sh Pack`, into `artifacts/release`), pushes to nuget.org, tags HEAD `v<Version>` and pushes the tag.

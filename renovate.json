@@ -3,7 +3,7 @@
   "extends": ["github>ANcpLua/github-settings-automation"],
   "packageRules": [
     {
-      "description": "MassTransit 9 replaced the Apache-2.0 licence of the 8.x line with the commercial massient.com licence, which is non-transferable, non-sublicensable and forbids redistribution. This repository stays on 8.x by decision of the maintainer on 2026-09-04; the pin in Directory.Packages.props is the range [8.5.10,9.0.0) for the same reason. Minor and patch updates inside 8.x are still offered.",
+      "description": "MassTransit 9 is commercially licensed (non-transferable, non-sublicensable, no redistribution); stay on the Apache-2.0 8.x line, whose minor and patch updates are still offered.",
       "matchUpdateTypes": ["major"],
       "enabled": false,
       "matchPackageNames": [

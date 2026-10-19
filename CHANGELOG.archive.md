@@ -1,6 +1,6 @@
 # Changelog archive
 
-Entries older than the newest three, which stay in [CHANGELOG.md](CHANGELOG.md).
+Entries before 25.0.0; later ones are in [CHANGELOG.md](CHANGELOG.md).
 
 ## [24.1.1] - 2026-10-14
 

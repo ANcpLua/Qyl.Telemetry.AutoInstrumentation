@@ -3,7 +3,7 @@ namespace Qyl.Build;
 
 /// <summary>
 /// Every build, pack and gate of this repository. <c>./eng/build.sh --help</c> lists the targets;
-/// <c>Check</c> is the gate before a push or a release, <c>CheckFull</c> runs everything.
+/// CI runs <c>Check</c>, <c>CheckFull</c> runs everything.
 /// </summary>
 sealed partial class QylBuild : FalloutBuild
 {
@@ -47,7 +47,7 @@ sealed partial class QylBuild : FalloutBuild
         .Executes(ReleasePack.Run);
 
     Target Check => definition => definition
-        .Description("The gate before every push and release: contracts, release builds, the public API report, generator snapshots, package layout and consumer behavior")
+        .Description("Contracts, release builds, the public API report, generator snapshots, package layout and consumer behavior (CI runs this)")
         .DependsOn(Contracts, Build, ApiBaseline, GeneratorSnapshots, PackageLayout, ConsumerBehavior)
         .Executes(() =>
         {

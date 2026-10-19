@@ -37,11 +37,11 @@ static class LocalFeed
 /// </summary>
 static class FixtureWorkspace
 {
-    private static readonly HashSet<string> Prepared = new(StringComparer.Ordinal);
+    private static bool _prepared;
 
     public static AbsolutePath Root => Repo.Artifacts / "fixtures";
 
-    /// <summary>The packages this checkout ships. In published mode they come from nuget.org instead.</summary>
+    /// <summary>The packages this checkout ships, mapped to the local feed.</summary>
     private static readonly string[] LocalPackagePatterns =
     [
         "Qyl.Telemetry.AutoInstrumentation",
@@ -52,12 +52,11 @@ static class FixtureWorkspace
         "Qyl.Telemetry.Hosting",
     ];
 
-    /// <summary>A clean directory for one consumer. <paramref name="published"/> restores the qyl
-    /// packages from nuget.org rather than from the local feed.</summary>
-    public static AbsolutePath Create(string name, bool published = false)
+    /// <summary>A clean directory for one consumer.</summary>
+    public static AbsolutePath Create(string name)
     {
-        var scope = Prepare(published);
-        var directory = scope / "work" / name;
+        Prepare();
+        var directory = Root / "work" / name;
         directory.CreateOrCleanDirectory();
         return directory;
     }
@@ -83,18 +82,18 @@ static class FixtureWorkspace
         return File.ReadAllText(path);
     }
 
-    private static AbsolutePath Prepare(bool published)
+    private static void Prepare()
     {
-        var scope = published ? Repo.Artifacts / "fixtures-published" : Root;
-        if (!Prepared.Add(scope))
-            return scope;
+        if (_prepared)
+            return;
+        _prepared = true;
 
-        scope.CreateDirectory();
-        File.WriteAllText(scope / "Directory.Build.props", "<Project />\n");
-        File.WriteAllText(scope / "Directory.Build.targets", "<Project />\n");
-        File.WriteAllText(scope / "Directory.Packages.props", "<Project>\n  <PropertyGroup>\n    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>\n  </PropertyGroup>\n</Project>\n");
+        Root.CreateDirectory();
+        File.WriteAllText(Root / "Directory.Build.props", "<Project />\n");
+        File.WriteAllText(Root / "Directory.Build.targets", "<Project />\n");
+        File.WriteAllText(Root / "Directory.Packages.props", "<Project>\n  <PropertyGroup>\n    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>\n  </PropertyGroup>\n</Project>\n");
 
-        var packages = scope / "packages";
+        var packages = Root / "packages";
         packages.CreateDirectory();
         // The qyl ids are rebuilt by every run under one version number; only third-party packages
         // may be reused from an earlier run.
@@ -108,26 +107,20 @@ static class FixtureWorkspace
             .AppendLine($"    <add key=\"globalPackagesFolder\" value=\"{packages}\" />")
             .AppendLine("  </config>")
             .AppendLine("  <packageSources>")
-            .AppendLine("    <clear />");
-        if (!published)
-            config.AppendLine($"    <add key=\"qyl-local\" value=\"{LocalFeed.Directory}\" />");
-        config.AppendLine($"    <add key=\"nuget.org\" value=\"{Repo.NuGetOrg}\" />")
+            .AppendLine("    <clear />")
+            .AppendLine($"    <add key=\"qyl-local\" value=\"{LocalFeed.Directory}\" />")
+            .AppendLine($"    <add key=\"nuget.org\" value=\"{Repo.NuGetOrg}\" />")
             .AppendLine("  </packageSources>")
-            .AppendLine("  <packageSourceMapping>");
-        if (!published)
-        {
-            config.AppendLine("    <packageSource key=\"qyl-local\">");
-            foreach (var pattern in LocalPackagePatterns)
-                config.AppendLine($"      <package pattern=\"{pattern}\" />");
-            config.AppendLine("    </packageSource>");
-        }
-
-        config.AppendLine("    <packageSource key=\"nuget.org\">")
+            .AppendLine("  <packageSourceMapping>")
+            .AppendLine("    <packageSource key=\"qyl-local\">");
+        foreach (var pattern in LocalPackagePatterns)
+            config.AppendLine($"      <package pattern=\"{pattern}\" />");
+        config.AppendLine("    </packageSource>")
+            .AppendLine("    <packageSource key=\"nuget.org\">")
             .AppendLine("      <package pattern=\"*\" />")
             .AppendLine("    </packageSource>")
             .AppendLine("  </packageSourceMapping>")
             .AppendLine("</configuration>");
-        File.WriteAllText(scope / "nuget.config", config.ToString());
-        return scope;
+        File.WriteAllText(Root / "nuget.config", config.ToString());
     }
 }

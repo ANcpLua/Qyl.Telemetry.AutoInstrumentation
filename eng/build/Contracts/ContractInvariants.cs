@@ -228,7 +228,7 @@ static partial class ContractInvariants
         VerifyConformanceProfileGate();
         VerifyManagedEvidenceBoundaries(contract);
         VerifySupportedVersionOverrides(contract);
-        VerifyHandoffRealDemoCoverage(contract);
+        VerifyRealDemoCoverage(contract);
         VerifyNativeAotEvidenceIsExecutable(contract);
         VerifyGeneratorKeys(contract);
         VerifyEnvironmentContract(contract);
@@ -317,7 +317,7 @@ static partial class ContractInvariants
     /// The demo lanes CheckFull runs and the lanes the contract cites as evidence are one set: a cited lane
     /// file must be a registered lane, and every registered lane must be claimed by an implemented signal.
     /// </summary>
-    private static void VerifyHandoffRealDemoCoverage(Item contract)
+    private static void VerifyRealDemoCoverage(Item contract)
     {
         var cited = ContractModel.ImplementedSignalItems(contract)
             .SelectMany(ContractModel.Evidence)

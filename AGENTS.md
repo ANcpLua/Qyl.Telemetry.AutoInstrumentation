@@ -1,3 +1,3 @@
 # Qyl.Telemetry.AutoInstrumentation
 
-.NET instrumentation and hosting. HTTP/gRPC fixtures use Qyl.Telemetry.Tests.Capture in the pinned eng/dependencies/Qyl.Telemetry.Tests submodule; eng/build.sh initializes it. contracts/otel-dotnet-auto.upstream.yaml compares coverage, not runtime dependencies. Collector persistence is tested in qyl. Databases/brokers use eng/testbed and .railway/railway.ts. README documents commands; SKILL.md covers releases and consumers.
+NativeAOT-safe .NET auto-instrumentation: six NuGet packages from src/, runtime evidence in demos/ and tests/, Fallout targets in eng/build (make help). CI gate: ./eng/build.sh Check (make check). Release: ./release.sh. Version: Directory.Build.props; pins: Directory.Packages.props. eng/dependencies/Qyl.Telemetry.Tests is a submodule that eng/build.sh initializes. Databases and brokers: eng/testbed and .railway/railway.ts.
