@@ -61,7 +61,9 @@ static class ReleaseIndex
     {
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, probe.Url);
+            // NuGet's CDN can retain an old index despite Cache-Control: no-cache.
+            var url = new UriBuilder(probe.Url) { Query = $"qyl-release={Guid.NewGuid():N}" }.Uri;
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
             request.Headers.CacheControl = new CacheControlHeaderValue { NoCache = true };
             using var response = Http.Send(request);
             if (!response.IsSuccessStatusCode)

@@ -7,6 +7,8 @@ packages are then exercised in clean managed and NativeAOT consumers.
 
 ## [28.2.2] - 2026-10-19
 
+- Consume SemanticConventions 15.0.0 and its generated Weaver v2 validation configuration.
+- Probe fresh NuGet indexes during release verification instead of accepting stale CDN responses.
 - Preserve compiler-host helper exclusions when an isolated NuGet cache has no trailing directory separator.
 - Preserve nullable annotations on generated receivers, parameters and returns, including nullable generic arguments and array ranks. Keep overload matching annotation-insensitive.
 - Remove blanket warning suppression from generated interceptors and build metadata. Scope obsolete warnings to their forwarded calls while retaining diagnostics at the original caller.
