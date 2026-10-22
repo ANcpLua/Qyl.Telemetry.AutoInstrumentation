@@ -15,7 +15,7 @@ public static class QylInterceptedKafka
         [QylFromArgument(0, Type = "string")]
         [QylFromArgument(0, Type = "Confluent.Kafka.TopicPartition", Convert = "{0}.Topic")]
         string? topic,
-        [QylFromArgument(0, Type = "Confluent.Kafka.TopicPartition", Convert = "(int?){0}.Partition.Value")]
+        [QylFromArgument(0, Type = "Confluent.Kafka.TopicPartition", Convert = "{0}.Partition.IsSpecial ? null : (int?){0}.Partition.Value")]
         int? partitionId)
         => QylMessagingActivityPolicy.StartKafkaProducerActivity(topic, partitionId);
 
