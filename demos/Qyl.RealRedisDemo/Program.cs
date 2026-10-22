@@ -118,6 +118,12 @@ await using (var connection = await WaitForRedisAsync(configuration))
     probes.Add(await Probe("StringIncrement.Float", d => d.StringIncrementAsync(strFloat, 1.5)));
     probes.Add(await Probe("StringDecrement.Unit", d => d.StringDecrementAsync(str)));
     probes.Add(await Probe("StringDecrement.By", d => d.StringDecrementAsync(str, 5)));
+    probes.Add(await Probe("StringIncrement.MinusOne", d => d.StringIncrementAsync(str, -1)));
+    probes.Add(await Probe("StringIncrement.Negative", d => d.StringIncrementAsync(str, -5)));
+    probes.Add(await Probe("StringDecrement.MinusOne", d => d.StringDecrementAsync(str, -1)));
+    probes.Add(await Probe("StringDecrement.Negative", d => d.StringDecrementAsync(str, -5)));
+    probes.Add(await Probe("SortedSetLength", d => d.SortedSetLengthAsync(zset)));
+    probes.Add(await Probe("SortedSetLength.Bounded", d => d.SortedSetLengthAsync(zset, 1, 10)));
     probes.Add(await Probe("StringSet.NotExists", d => d.StringSetAsync(str, "10", default, ValueCondition.NotExists)));
     probes.Add(await Probe("StringSet.WhenNotExists", d => d.StringSetAsync(str, "10", TimeSpan.FromMinutes(5), When.NotExists)));
     probes.Add(await Probe("HashSet.Field", d => d.HashSetAsync(hash, "f", "v")));
@@ -125,7 +131,7 @@ await using (var connection = await WaitForRedisAsync(configuration))
     probes.Add(await Probe("ListLeftPush", d => d.ListLeftPushAsync(list, "a")));
     probes.Add(await Probe("ListLeftPush.Exists", d => d.ListLeftPushAsync(list, "a", When.Exists)));
     probes.Add(await Probe("ListRightPush.Exists", d => d.ListRightPushAsync(list, "a", When.Exists)));
-    // KeyExpireAsync reaches five commands from one method: a null expiry persists, and
+    // KeyExpireAsync reaches five commands from one method: a null or MaxValue expiry persists, and
     // StackExchange.Redis drops to second precision when the value carries no whole milliseconds.
     probes.Add(await Probe("KeyExpire.Seconds", d => d.KeyExpireAsync(str, TimeSpan.FromMinutes(5))));
     probes.Add(await Probe("KeyExpire.Milliseconds", d => d.KeyExpireAsync(str, TimeSpan.FromMilliseconds(1500))));
@@ -134,6 +140,8 @@ await using (var connection = await WaitForRedisAsync(configuration))
     probes.Add(await Probe("KeyExpire.At", d => d.KeyExpireAsync(str, new DateTime(2030, 1, 1, 0, 0, 0, DateTimeKind.Utc))));
     probes.Add(await Probe("KeyExpire.AtMilliseconds", d => d.KeyExpireAsync(str, new DateTime(2030, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddMilliseconds(500))));
     probes.Add(await Probe("KeyExpire.AtPersist", d => d.KeyExpireAsync(str, (DateTime?)null)));
+    probes.Add(await Probe("KeyExpire.MaxValue", d => d.KeyExpireAsync(str, TimeSpan.MaxValue)));
+    probes.Add(await Probe("KeyExpire.AtMaxValue", d => d.KeyExpireAsync(str, DateTime.MaxValue)));
 
     probes.Add(await Probe("SortedSetRange.Ascending", d => d.SortedSetRangeByRankAsync(zset)));
     probes.Add(await Probe("SortedSetRange.Descending", d => d.SortedSetRangeByRankAsync(zset, 0, -1, Order.Descending)));

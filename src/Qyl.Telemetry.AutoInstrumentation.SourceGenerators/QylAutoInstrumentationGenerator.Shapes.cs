@@ -537,9 +537,9 @@ public sealed partial class QylAutoInstrumentationGenerator
                 operation = new RedisOperationSpec("SET");
                 return true;
             case "StringIncrementAsync":
-                return TryGetRedisIncrementOperation(parameters, "INCR", "INCRBY", out operation);
+                return TryGetRedisIncrementOperation(parameters, decrements: false, out operation);
             case "StringDecrementAsync":
-                return TryGetRedisIncrementOperation(parameters, "DECR", "DECRBY", out operation);
+                return TryGetRedisIncrementOperation(parameters, decrements: true, out operation);
             case "StringAppendAsync":
                 operation = new RedisOperationSpec("APPEND");
                 return true;
@@ -720,8 +720,7 @@ public sealed partial class QylAutoInstrumentationGenerator
                 operation = new RedisOperationSpec("ZINCRBY");
                 return true;
             case "SortedSetLengthAsync":
-                operation = new RedisOperationSpec("ZCARD");
-                return true;
+                return TryGetRedisSortedSetLengthOperation(parameters, out operation);
             case "SortedSetLengthByValueAsync":
                 operation = new RedisOperationSpec("ZLEXCOUNT");
                 return true;
@@ -770,13 +769,14 @@ public sealed partial class QylAutoInstrumentationGenerator
     }
 
     /// <summary>
-    /// StackExchange.Redis collapses an increment of exactly one onto the unit command and
-    /// routes the floating-point overload through <c>INCRBYFLOAT</c> in both directions.
+    /// StackExchange.Redis sends a decrement as the increment by the negated value, collapses an
+    /// increment of exactly one or minus one onto INCR or DECR, sends DECRBY for every other
+    /// negative increment and INCRBY otherwise, and routes the floating-point overload through
+    /// <c>INCRBYFLOAT</c> in both directions.
     /// </summary>
     private static bool TryGetRedisIncrementOperation(
         EquatableArray<ParameterSpec> parameters,
-        string unitCommand,
-        string byCommand,
+        bool decrements,
         out RedisOperationSpec operation)
     {
         operation = default;
@@ -795,9 +795,30 @@ public sealed partial class QylAutoInstrumentationGenerator
         if (!IsRedisParameter(parameters, 1, "long"))
             return false;
 
+        var value = parameters[1].Name;
         operation = new RedisOperationSpec(
-            byCommand,
-            RedisBranches(new RedisCommandBranch(parameters[1].Name + " == 1L", unitCommand)));
+            "INCRBY",
+            RedisBranches(
+                new RedisCommandBranch(value + " == 1L", decrements ? "DECR" : "INCR"),
+                new RedisCommandBranch(value + " == -1L", decrements ? "INCR" : "DECR"),
+                new RedisCommandBranch(value + (decrements ? " > 0L" : " < 0L"), "DECRBY")));
+        return true;
+    }
+
+    /// <summary>StackExchange.Redis sends ZCARD for the unbounded range and ZCOUNT for any other.</summary>
+    private static bool TryGetRedisSortedSetLengthOperation(
+        EquatableArray<ParameterSpec> parameters,
+        out RedisOperationSpec operation)
+    {
+        operation = default;
+        if (!IsRedisParameter(parameters, 1, "double") || !IsRedisParameter(parameters, 2, "double"))
+            return false;
+
+        operation = new RedisOperationSpec(
+            "ZCOUNT",
+            RedisBranches(new RedisCommandBranch(
+                "global::System.Double.IsNegativeInfinity(" + parameters[1].Name + ") && global::System.Double.IsPositiveInfinity(" + parameters[2].Name + ")",
+                "ZCARD")));
         return true;
     }
 
@@ -851,7 +872,7 @@ public sealed partial class QylAutoInstrumentationGenerator
     }
 
     /// <summary>
-    /// A null expiry reaches PERSIST, and StackExchange.Redis picks the second-precision command
+    /// A null or MaxValue expiry reaches PERSIST, and StackExchange.Redis picks the second-precision command
     /// when the value carries no whole milliseconds — <c>TimeSpan.FromTicks(TimeSpan.TicksPerSecond + 1)</c>
     /// still reaches EXPIRE, so the test is the millisecond component rather than the tick
     /// remainder. Both tests read the argument the call site already holds.
@@ -871,14 +892,14 @@ public sealed partial class QylAutoInstrumentationGenerator
                 operation = new RedisOperationSpec(
                     "PEXPIRE",
                     RedisBranches(
-                        new RedisCommandBranch(expiry + " is null", "PERSIST"),
+                        new RedisCommandBranch(expiry + " is null || " + expiry + ".Value == global::System.TimeSpan.MaxValue", "PERSIST"),
                         new RedisCommandBranch(expiry + ".Value.Milliseconds == 0", "EXPIRE")));
                 return true;
             case "global::System.DateTime?":
                 operation = new RedisOperationSpec(
                     "PEXPIREAT",
                     RedisBranches(
-                        new RedisCommandBranch(expiry + " is null", "PERSIST"),
+                        new RedisCommandBranch(expiry + " is null || " + expiry + ".Value == global::System.DateTime.MaxValue", "PERSIST"),
                         new RedisCommandBranch(expiry + ".Value.Millisecond == 0", "EXPIREAT")));
                 return true;
             default:
