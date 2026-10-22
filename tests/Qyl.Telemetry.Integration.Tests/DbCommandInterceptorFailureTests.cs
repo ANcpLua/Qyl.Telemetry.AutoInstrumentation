@@ -98,8 +98,9 @@ internal static class Consumer
     {
         using var image = new MemoryStream();
         var emitted = compilation.Emit(image);
-        Assert.IsTrue(emitted.Success, string.Join(Environment.NewLine, emitted.Diagnostics));
-        return Assembly.Load(image.ToArray());
+        return emitted.Success
+            ? Assembly.Load(image.ToArray())
+            : throw new InvalidOperationException("The generated consumer did not emit:" + Environment.NewLine + string.Join(Environment.NewLine, emitted.Diagnostics));
     }
 
     private static ActivityListener ListenToQylSpans(List<Activity> started)

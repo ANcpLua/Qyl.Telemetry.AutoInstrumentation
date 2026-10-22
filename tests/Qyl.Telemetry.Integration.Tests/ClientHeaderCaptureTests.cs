@@ -3,47 +3,32 @@ using Qyl.Telemetry.TestFixtures;
 
 namespace Qyl.Telemetry.Integration.Tests;
 
+/// <summary>HttpClient request and response header capture in a NativeAOT child process, per configuration and control.</summary>
 [TestClass]
-public sealed class ClientHeaderCaptureTests(TestContext testContext)
+sealed class ClientHeaderCaptureTests : NativeCaptureTests<ClientHeaderCaptureTests>, INativeCaptureSuite
 {
     private const string RequestHeaders = " X-Tenant-Id, X_Request_Id, X-Request-Id, X-REQUEST-ID, X.Request.Id, Content-Type, Content-Disposition, X-Custom-Multi ";
     private const string ResponseHeaders = "X-RateLimit-Remaining,Content-Type,X-Custom-Multi";
     private const string EmptyHeaders = " , \t, ";
-    private static NativeCaptureFixture? _fixture;
 
-    [ClassInitialize]
-    public static async Task PublishAsync(TestContext context) =>
-        _fixture = await NativeCaptureFixture.PublishAsync("ClientHeaderCapture", context);
+    public static string Fixture => "ClientHeaderCapture";
 
-    [TestMethod]
-    [DataRow(ClientCaptureProfiles.Configured, RequestHeaders, ResponseHeaders, ClientCaptureControl.Enabled, true, true,
-        ArgumentsDisplayName = ClientCaptureProfiles.Configured)]
-    [DataRow(ClientCaptureProfiles.Request, RequestHeaders, null, ClientCaptureControl.Enabled, true, false,
-        ArgumentsDisplayName = ClientCaptureProfiles.Request)]
-    [DataRow(ClientCaptureProfiles.Response, null, ResponseHeaders, ClientCaptureControl.Enabled, false, true,
-        ArgumentsDisplayName = ClientCaptureProfiles.Response)]
-    [DataRow(ClientCaptureProfiles.None, null, null, ClientCaptureControl.Enabled, false, false,
-        ArgumentsDisplayName = ClientCaptureProfiles.None)]
-    [DataRow(ClientCaptureProfiles.Empty, EmptyHeaders, EmptyHeaders, ClientCaptureControl.Enabled, false, false,
-        ArgumentsDisplayName = ClientCaptureProfiles.Empty)]
-    [DataRow(ClientCaptureProfiles.Disabled, RequestHeaders, ResponseHeaders, ClientCaptureControl.InstrumentationDisabled, false, false,
-        ArgumentsDisplayName = ClientCaptureProfiles.Disabled)]
-    [DataRow(ClientCaptureProfiles.GlobalDisabled, RequestHeaders, ResponseHeaders, ClientCaptureControl.GlobalDisabled, false, false,
-        ArgumentsDisplayName = ClientCaptureProfiles.GlobalDisabled)]
-    [DataRow(ClientCaptureProfiles.Unsampled, RequestHeaders, ResponseHeaders, ClientCaptureControl.Unsampled, false, false,
-        ArgumentsDisplayName = ClientCaptureProfiles.Unsampled)]
-    [DataRow(ClientCaptureProfiles.Suppressed, RequestHeaders, ResponseHeaders, ClientCaptureControl.Suppressed, false, false,
-        ArgumentsDisplayName = ClientCaptureProfiles.Suppressed)]
-    public async Task Native_http_capture_preserves_headers_controls_and_parentage(
-        string profile, string? requestHeaders, string? responseHeaders,
-        ClientCaptureControl control, bool requestCaptured, bool responseCaptured)
-    {
-        var environment = NativeCaptureFixture.CreateEnvironment(control, QylAutoInstrumentationIds.HttpClient);
-        if (requestHeaders is not null)
-            environment[QylAutoInstrumentationOptions.HttpClientRequestHeadersVariable] = requestHeaders;
-        if (responseHeaders is not null)
-            environment[QylAutoInstrumentationOptions.HttpClientResponseHeadersVariable] = responseHeaders;
-        Assert.IsNotNull(_fixture);
-        await _fixture.RunAsync(new ClientCaptureScenario(profile, control, requestCaptured, responseCaptured), environment, testContext);
-    }
+    public static string Instrumentation => QylAutoInstrumentationIds.HttpClient;
+
+    public static string RequestVariable => QylAutoInstrumentationOptions.HttpClientRequestHeadersVariable;
+
+    public static string ResponseVariable => QylAutoInstrumentationOptions.HttpClientResponseHeadersVariable;
+
+    public static IReadOnlyList<NativeCaptureCase> Cases =>
+    [
+        new(ClientCaptureProfiles.Configured, RequestHeaders, ResponseHeaders, ClientCaptureControl.Enabled, true, true),
+        new(ClientCaptureProfiles.Request, RequestHeaders, null, ClientCaptureControl.Enabled, true, false),
+        new(ClientCaptureProfiles.Response, null, ResponseHeaders, ClientCaptureControl.Enabled, false, true),
+        new(ClientCaptureProfiles.None, null, null, ClientCaptureControl.Enabled, false, false),
+        new(ClientCaptureProfiles.Empty, EmptyHeaders, EmptyHeaders, ClientCaptureControl.Enabled, false, false),
+        new(ClientCaptureProfiles.Disabled, RequestHeaders, ResponseHeaders, ClientCaptureControl.InstrumentationDisabled, false, false),
+        new(ClientCaptureProfiles.GlobalDisabled, RequestHeaders, ResponseHeaders, ClientCaptureControl.GlobalDisabled, false, false),
+        new(ClientCaptureProfiles.Unsampled, RequestHeaders, ResponseHeaders, ClientCaptureControl.Unsampled, false, false),
+        new(ClientCaptureProfiles.Suppressed, RequestHeaders, ResponseHeaders, ClientCaptureControl.Suppressed, false, false),
+    ];
 }

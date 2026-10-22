@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -6,16 +7,178 @@ using Qyl.Telemetry.AutoInstrumentation.SourceGenerators;
 
 namespace Qyl.Telemetry.Integration.Tests;
 
+/// <summary>
+/// The source generator against consumer compilations. Each scenario is compiled once, before and after
+/// generation, and the tests read its compilations, its generator result and the interceptor bound to the
+/// consumer's call. A changed dependency signature is the failure mode a library major introduces: the
+/// generator must emit no interceptor for it and report exactly one QYL1001 instead, since silence would
+/// mean instrumentation disappearing with no signal and an interceptor anyway would break the build.
+/// </summary>
 [TestClass]
-public sealed class GeneratorContractTests(TestContext testContext)
+public sealed class GeneratorContractTests
 {
+    private const string ChangedSignature = "changed-dependency-signature";
+    private const string GenAiWithoutOptIns = "genai-without-opt-ins";
+    private const string ValidDbCommand = "valid-db-command";
+    private const string KafkaProduce = "kafka-produce-optional-callback";
+    private const string KafkaProduceAsync = "kafka-produce-async-optional-cancellation";
+    private const string WcfNullableReference = "wcf-nullable-reference";
+    private const string WcfNullableMultidimensional = "wcf-nullable-multidimensional-array";
+    private const string WcfNullableJagged = "wcf-nullable-jagged-array";
+    private const string ObsoleteSuppressed = "obsolete-suppressed";
+    private const string ObsoleteMessageSuppressed = "obsolete-message-suppressed";
+    private const string ObsoleteDiagnosticIdSuppressedAsync = "obsolete-diagnostic-id-suppressed-async";
+    private const string ObsoleteUnsuppressed = "obsolete-unsuppressed";
+    private const string ObsoleteDbSuppressed = "obsolete-db-suppressed";
+    private const string ObsoleteDbSuppressedAsync = "obsolete-db-suppressed-async";
+    private const string InterceptorsSource = "QylAutoInstrumentation.Interceptors.g.cs";
+
     private static readonly CSharpParseOptions ParseOptions = new CSharpParseOptions(LanguageVersion.Preview)
         .WithFeatures([new KeyValuePair<string, string>("InterceptorsNamespaces", "Qyl.Telemetry.AutoInstrumentation.Generated")]);
 
-    [TestMethod]
-    public void Changed_dependency_signature_is_diagnosed_without_emitting_an_interceptor()
+    private static readonly Dictionary<string, Scenario> Scenarios = new(StringComparer.Ordinal)
     {
-        var result = Run("""
+        [ChangedSignature] = new(ShapeMismatchSource, CommandSource: true),
+        [GenAiWithoutOptIns] = new(GenAiSource, GeneratorDiagnostics: ["QYL1002", "QYL1002", "QYL1002"]),
+        [ValidDbCommand] = new(ValidDbSource, CommandSource: true, InterceptedMethod: "ExecuteScalar"),
+        [KafkaProduce] = new(KafkaConsumer(asynchronous: false), InterceptedMethod: "Produce"),
+        [KafkaProduceAsync] = new(KafkaConsumer(asynchronous: true), InterceptedMethod: "ProduceAsync"),
+        [WcfNullableReference] = new(WcfConsumer("string?"), InterceptedMethod: "Echo"),
+        [WcfNullableMultidimensional] = new(WcfConsumer("string?[,]?"), InterceptedMethod: "Echo"),
+        [WcfNullableJagged] = new(WcfConsumer("string?[]?[]?"), InterceptedMethod: "Echo"),
+        [ObsoleteSuppressed] = new(WcfConsumer("string?", "[Obsolete]", "CS0612"), InterceptedMethod: "Echo"),
+        [ObsoleteMessageSuppressed] = new(WcfConsumer("string?", "[Obsolete(\"Use replacement\")]", "CS0618"), InterceptedMethod: "Echo"),
+        [ObsoleteDiagnosticIdSuppressedAsync] = new(
+            WcfConsumer("string?", "[Obsolete(\"Use replacement\", DiagnosticId = \"LEGACY001\")]", "LEGACY001", asynchronous: true), InterceptedMethod: "Echo"),
+        [ObsoleteUnsuppressed] = new(WcfConsumer("string?", "[Obsolete(\"Use replacement\")]"), CompilerDiagnostics: ["CS0618"], InterceptedMethod: "Echo"),
+        [ObsoleteDbSuppressed] = new(ObsoleteDbConsumer(asynchronous: false), CommandSource: true, InterceptedMethod: "ExecuteScalar"),
+        [ObsoleteDbSuppressedAsync] = new(ObsoleteDbConsumer(asynchronous: true), CommandSource: true, InterceptedMethod: "ExecuteScalarAsync"),
+    };
+
+    private static readonly ConcurrentDictionary<string, Lazy<GeneratorRun>> Runs = new(StringComparer.Ordinal);
+
+    public static IEnumerable<object[]> AllScenarios => Scenarios.Keys.Select(static name => new object[] { name });
+
+    public static IEnumerable<object[]> InterceptedScenarios =>
+        Scenarios.Where(static pair => pair.Value.InterceptedMethod is not null).Select(static pair => new object[] { pair.Key });
+
+    [TestMethod]
+    [DynamicData(nameof(AllScenarios))]
+    public void ConsumerSource_EachScenario_CompilesWithOnlyTheExpectedDiagnostics(string scenario)
+    {
+        var problems = Problems(Run(scenario).Input);
+
+        Assert.AreSequenceEqual(Expected(Scenarios[scenario].CompilerDiagnostics), Ids(problems), Describe(problems));
+    }
+
+    [TestMethod]
+    [DynamicData(nameof(AllScenarios))]
+    public void GeneratedConsumer_EachScenario_CompilesWithOnlyTheExpectedDiagnostics(string scenario)
+    {
+        var problems = Problems(Run(scenario).Output);
+
+        Assert.AreSequenceEqual(Expected(Scenarios[scenario].CompilerDiagnostics), Ids(problems), Describe(problems));
+    }
+
+    [TestMethod]
+    [DynamicData(nameof(AllScenarios))]
+    public void Generator_EachScenario_RunsOnce(string scenario) =>
+        Assert.HasCount(1, Run(scenario).Results);
+
+    [TestMethod]
+    [DynamicData(nameof(AllScenarios))]
+    public void Generator_EachScenario_ReportsOnlyTheExpectedProblems(string scenario)
+    {
+        var problems = Run(scenario).Result.Diagnostics.Where(static diagnostic => diagnostic.Severity is DiagnosticSeverity.Warning or DiagnosticSeverity.Error).ToArray();
+
+        Assert.AreSequenceEqual(Expected(Scenarios[scenario].GeneratorDiagnostics), Ids(problems), Describe(problems));
+    }
+
+    [TestMethod]
+    [DynamicData(nameof(InterceptedScenarios))]
+    public void Generator_InterceptableCall_BindsAnInterceptor(string scenario) =>
+        Assert.IsNotNull(Interception(scenario).Interceptor);
+
+    [TestMethod]
+    public void Generator_ChangedDependencySignature_ReportsOneQyl1001Info()
+    {
+        var diagnostic = Assert.ContainsSingle(Run(ChangedSignature).Result.Diagnostics);
+
+        Assert.AreEqual(("QYL1001", DiagnosticSeverity.Info), (diagnostic.Id, diagnostic.Severity));
+    }
+
+    [TestMethod]
+    [DataRow("QylUnmatchedCommand.ExecuteScalar")]
+    [DataRow("not instrumented")]
+    public void Generator_ChangedDependencySignature_NamesTheUninstrumentedCall(string fragment) =>
+        Assert.Contains(fragment, Run(ChangedSignature).Result.Diagnostics.Single().GetMessage(), StringComparison.Ordinal);
+
+    [TestMethod]
+    public void Generator_ChangedDependencySignature_EmitsNoInterceptorSource() =>
+        Assert.DoesNotContain(static source => source.HintName == InterceptorsSource, Run(ChangedSignature).Result.GeneratedSources);
+
+    [TestMethod]
+    public void Generator_GenAiLibrariesWithoutOptIns_ReportsThreeDiagnostics() =>
+        Assert.HasCount(3, Run(GenAiWithoutOptIns).Result.Diagnostics);
+
+    [TestMethod]
+    [DataRow("Microsoft.Extensions.AI")]
+    [DataRow("Microsoft.Agents.AI")]
+    [DataRow("Microsoft.Agents.AI.Workflows")]
+    public void Generator_GenAiLibraryWithoutOptIn_ReportsOneQyl1002Error(string library)
+    {
+        var diagnostic = Assert.ContainsSingle(Run(GenAiWithoutOptIns).Result.Diagnostics
+            .Where(diagnostic => diagnostic.GetMessage().StartsWith("qyl subscribes " + library + "'s ActivitySource", StringComparison.Ordinal)));
+
+        Assert.AreEqual(("QYL1002", DiagnosticSeverity.Error), (diagnostic.Id, diagnostic.Severity));
+    }
+
+    [TestMethod]
+    [DataRow(KafkaProduce)]
+    [DataRow(KafkaProduceAsync)]
+    public void KafkaInterceptor_NullableTypeArguments_KeepsTheReceiverNullability(string scenario)
+    {
+        var (original, interceptor) = Interception(scenario);
+
+        Assert.IsTrue(SymbolEqualityComparer.IncludeNullability.Equals(
+            original?.ContainingType.WithNullableAnnotation(NullableAnnotation.NotAnnotated), interceptor?.Parameters[0].Type));
+    }
+
+    [TestMethod]
+    [DataRow(WcfNullableReference)]
+    [DataRow(WcfNullableMultidimensional)]
+    [DataRow(WcfNullableJagged)]
+    public void WcfInterceptor_NullableSignature_KeepsTheReturnNullability(string scenario)
+    {
+        var (original, interceptor) = Interception(scenario);
+
+        Assert.IsTrue(SymbolEqualityComparer.IncludeNullability.Equals(original?.ReturnType, interceptor?.ReturnType));
+    }
+
+    [TestMethod]
+    [DataRow(WcfNullableReference)]
+    [DataRow(WcfNullableMultidimensional)]
+    [DataRow(WcfNullableJagged)]
+    public void WcfInterceptor_NullableSignature_KeepsTheParameterNullabilityAndArrayShape(string scenario)
+    {
+        var (original, interceptor) = Interception(scenario);
+
+        Assert.IsTrue(SymbolEqualityComparer.IncludeNullability.Equals(original?.Parameters[0].Type, interceptor?.Parameters[^1].Type));
+    }
+
+    [TestMethod]
+    public void ObsoleteCall_CallerDoesNotSuppress_WarnsInTheConsumerFile()
+    {
+        var diagnostic = Assert.ContainsSingle(Problems(Run(ObsoleteUnsuppressed).Output));
+
+        Assert.AreEqual("Consumer.cs", diagnostic.Location.SourceTree?.FilePath);
+    }
+
+    [TestMethod]
+    public void ObsoleteCall_CallerDoesNotSuppress_ReportsTheWarningAsError() =>
+        Assert.IsTrue(Problems(Run(ObsoleteUnsuppressed).Output).Single().IsWarningAsError);
+
+    private const string ShapeMismatchSource = """
 // A call site that names a declared integration receiver and method but does not fit the declared
 // shape. QylUnmatchedCommand derives from System.Data.Common.DbCommand, so the receiver matches, and
 // the method name ExecuteScalar matches the DbCommand intercept declaration -- but the signature
@@ -36,19 +199,9 @@ internal sealed class QylUnmatchedCommand : SnapshotCommand
     internal string ExecuteScalar(int id)
         => id.ToString(System.Globalization.CultureInfo.InvariantCulture);
 }
-""", commandSource: true).Result;
-        var diagnostic = Assert.ContainsSingle(result.Diagnostics);
-        Assert.AreEqual("QYL1001", diagnostic.Id);
-        Assert.AreEqual(DiagnosticSeverity.Info, diagnostic.Severity);
-        Assert.Contains("QylUnmatchedCommand.ExecuteScalar", diagnostic.GetMessage());
-        Assert.Contains("not instrumented", diagnostic.GetMessage());
-        Assert.IsFalse(result.GeneratedSources.Any(static source => source.HintName == "QylAutoInstrumentation.Interceptors.g.cs"));
-    }
+""";
 
-    [TestMethod]
-    public void GenAi_libraries_without_their_opt_ins_report_each_missing_activation()
-    {
-        var result = Run("""
+    private const string GenAiSource = """
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
@@ -63,36 +216,80 @@ internal static class GenAiOptInsProbe
 
     internal static object Workflow(WorkflowBuilder builder) => builder.Build();
 }
-""", expectedGeneratorDiagnostics: ["QYL1002", "QYL1002", "QYL1002"]).Result;
-        Assert.HasCount(3, result.Diagnostics);
-        foreach (var library in new[] { "Microsoft.Extensions.AI", "Microsoft.Agents.AI", "Microsoft.Agents.AI.Workflows" })
-        {
-            var diagnostic = Assert.ContainsSingle(result.Diagnostics.Where(d => d.GetMessage().StartsWith("qyl subscribes " + library + "'s ActivitySource", StringComparison.Ordinal)));
-            Assert.AreEqual("QYL1002", diagnostic.Id);
-            Assert.AreEqual(DiagnosticSeverity.Error, diagnostic.Severity);
-        }
-    }
+""";
 
-    [TestMethod]
-    public void Valid_db_command_emits_compilable_interceptor_for_the_current_runtime_abi()
-    {
-        var (_, compilation) = Run("""
+    private const string ValidDbSource = """
 internal static class Consumer
 {
     internal static object? Run(SnapshotCommand command) => command.ExecuteScalar();
 }
-""", commandSource: true);
-        AssertIntercepted(compilation, "ExecuteScalar");
+""";
+
+    private sealed record Scenario(
+        string Source,
+        bool CommandSource = false,
+        string[]? CompilerDiagnostics = null,
+        string[]? GeneratorDiagnostics = null,
+        string? InterceptedMethod = null);
+
+    /// <summary>A scenario's compilation before and after generation, and the generator's results.</summary>
+    private sealed record GeneratorRun(CSharpCompilation Input, CSharpCompilation Output, IReadOnlyList<GeneratorRunResult> Results)
+    {
+        public GeneratorRunResult Result => Results.Single();
     }
 
-    [TestMethod]
-    [DataRow(false, ArgumentsDisplayName = "Produce with optional callback")]
-    [DataRow(true, ArgumentsDisplayName = "ProduceAsync with optional cancellation")]
-    public void Nullable_Kafka_receiver_and_optional_arguments_compile_without_warnings(bool asynchronous)
+    private static string[] Expected(string[]? ids) => [.. (ids ?? []).Order(StringComparer.Ordinal)];
+
+    private static string[] Ids(IEnumerable<Diagnostic> diagnostics) => [.. diagnostics.Select(static diagnostic => diagnostic.Id).Order(StringComparer.Ordinal)];
+
+    private static string Describe(IEnumerable<Diagnostic> diagnostics) => string.Join(Environment.NewLine, diagnostics.Select(static diagnostic => diagnostic.ToString()));
+
+    private static Diagnostic[] Problems(Compilation compilation) =>
+    [
+        .. compilation.GetDiagnostics()
+            .Where(static diagnostic => diagnostic.Severity is DiagnosticSeverity.Warning or DiagnosticSeverity.Error)
+    ];
+
+    private static (IMethodSymbol? Original, IMethodSymbol? Interceptor) Interception(string scenario)
+    {
+        var method = Scenarios[scenario].InterceptedMethod;
+        var compilation = Run(scenario).Output;
+        var tree = compilation.SyntaxTrees.Single(static tree => tree.FilePath == "Consumer.cs");
+        var invocation = tree.GetRoot().DescendantNodes()
+            .OfType<InvocationExpressionSyntax>()
+            .Single(invocation => invocation.Expression is MemberAccessExpressionSyntax member && member.Name.Identifier.ValueText == method);
+        var model = compilation.GetSemanticModel(tree);
+        return (model.GetSymbolInfo(invocation).Symbol as IMethodSymbol, model.GetInterceptorMethod(invocation));
+    }
+
+    private static GeneratorRun Run(string scenario) =>
+        Runs.GetOrAdd(scenario, static name => new Lazy<GeneratorRun>(() => Generate(Scenarios[name]))).Value;
+
+    private static GeneratorRun Generate(Scenario scenario)
+    {
+        var trees = new List<SyntaxTree> { CSharpSyntaxTree.ParseText(scenario.Source, ParseOptions, "Consumer.cs") };
+        if (scenario.CommandSource)
+            trees.Add(CSharpSyntaxTree.ParseText("using System; using System.Threading; using System.Threading.Tasks;\n" +
+                File.ReadAllText(Repo.Root / "tests/Qyl.Telemetry.AutoInstrumentation.SourceGenerators.Snapshots/Fixture/SnapshotCommand.cs"),
+                ParseOptions, "SnapshotCommand.cs"));
+        var references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator)
+            .Append(typeof(QylGeneratedCodeAbi).Assembly.Location)
+            .Append(typeof(Confluent.Kafka.IProducer<,>).Assembly.Location)
+            .Append(typeof(System.ServiceModel.ClientBase<>).Assembly.Location).Distinct(StringComparer.Ordinal)
+            .Select(static path => MetadataReference.CreateFromFile(path));
+        var compilation = CSharpCompilation.Create("GeneratorConsumer", trees, references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable,
+                generalDiagnosticOption: ReportDiagnostic.Error));
+        GeneratorDriver driver = CSharpGeneratorDriver.Create([new QylAutoInstrumentationGenerator().AsSourceGenerator()], parseOptions: ParseOptions);
+        driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out var updated, out _);
+        return new GeneratorRun(compilation, (CSharpCompilation)updated, driver.GetRunResult().Results);
+    }
+
+    private static string KafkaConsumer(bool asynchronous)
     {
         var method = asynchronous ? "ProduceAsync" : "Produce";
         var returnType = asynchronous ? "Task<DeliveryResult<string?, string?>>" : "void";
-        var (_, compilation) = Run($$"""
+        return $$"""
 using Confluent.Kafka;
 using System.Threading.Tasks;
 
@@ -102,59 +299,15 @@ internal static class Consumer
         IProducer<string?, string?> producer, Message<string?, string?> message)
         => producer.{{method}}("topic", message);
 }
-""");
-        var (original, interceptor) = AssertIntercepted(compilation, method);
-        Assert.IsTrue(SymbolEqualityComparer.IncludeNullability.Equals(
-            original.ContainingType.WithNullableAnnotation(NullableAnnotation.NotAnnotated), interceptor.Parameters[0].Type),
-            "The receiver must preserve the original type arguments and their nullability.");
+""";
     }
 
-    [TestMethod]
-    [DataRow("string?", ArgumentsDisplayName = "nullable reference")]
-    [DataRow("string?[,]?", ArgumentsDisplayName = "nullable multidimensional array")]
-    [DataRow("string?[]?[]?", ArgumentsDisplayName = "nullable jagged array")]
-    public void Nullable_parameters_and_returns_preserve_the_bound_signature(string type)
-    {
-        var (_, compilation) = Run(WcfConsumer(type));
-        var (original, interceptor) = AssertIntercepted(compilation, "Echo");
-        Assert.IsTrue(SymbolEqualityComparer.IncludeNullability.Equals(original.ReturnType, interceptor.ReturnType),
-            "The return type must preserve explicit nullable annotations.");
-        Assert.IsTrue(SymbolEqualityComparer.IncludeNullability.Equals(original.Parameters[0].Type, interceptor.Parameters[^1].Type),
-            "The parameter type must preserve explicit nullable annotations and array structure.");
-    }
-
-    [TestMethod]
-    [DataRow("[Obsolete]", "CS0612", false)]
-    [DataRow("[Obsolete(\"Use replacement\")]", "CS0618", false)]
-    [DataRow("[Obsolete(\"Use replacement\", DiagnosticId = \"LEGACY001\")]", "LEGACY001", true)]
-    public void Obsolete_forwarding_respects_the_callers_local_warning_suppression(
-        string attribute, string diagnostic, bool asynchronous)
-    {
-        var (_, compilation) = Run(WcfConsumer("string?", attribute, diagnostic, asynchronous));
-        AssertIntercepted(compilation, "Echo");
-    }
-
-    [TestMethod]
-    public void Obsolete_warning_remains_at_the_original_call_when_the_caller_does_not_suppress_it()
-    {
-        var (_, compilation) = Run(WcfConsumer("string?", "[Obsolete(\"Use replacement\")]"),
-            expectedCompilerDiagnostics: ["CS0618"]);
-        var diagnostic = Assert.ContainsSingle(CompilerProblems(compilation));
-        Assert.IsNotNull(diagnostic.Location.SourceTree);
-        Assert.AreEqual("Consumer.cs", diagnostic.Location.SourceTree.FilePath);
-        Assert.IsTrue(diagnostic.IsWarningAsError);
-        AssertIntercepted(compilation, "Echo");
-    }
-
-    [TestMethod]
-    [DataRow(false)]
-    [DataRow(true)]
-    public void Obsolete_db_forwarding_respects_the_callers_local_warning_suppression(bool asynchronous)
+    private static string ObsoleteDbConsumer(bool asynchronous)
     {
         var returnType = asynchronous ? "System.Threading.Tasks.Task<object?>" : "object?";
         var method = asynchronous ? "ExecuteScalarAsync" : "ExecuteScalar";
         var body = asynchronous ? "System.Threading.Tasks.Task.FromResult<object?>(null)" : "null";
-        var (_, compilation) = Run($$"""
+        return $$"""
 internal sealed class LegacyCommand : SnapshotCommand
 {
     [System.Obsolete("Use replacement")]
@@ -166,8 +319,7 @@ internal static class Consumer
     internal static {{returnType}} Run(LegacyCommand command) => command.{{method}}();
 #pragma warning restore CS0618
 }
-""", commandSource: true);
-        AssertIntercepted(compilation, method);
+""";
     }
 
     private static string WcfConsumer(string type, string attribute = "", string suppressedDiagnostic = "", bool asynchronous = false)
@@ -196,59 +348,5 @@ internal static class Consumer
     {{(suppressedDiagnostic.Length == 0 ? "" : "#pragma warning restore " + suppressedDiagnostic)}}
 }
 """;
-    }
-
-    private (IMethodSymbol Original, IMethodSymbol Interceptor) AssertIntercepted(CSharpCompilation compilation, string method)
-    {
-        var tree = Assert.ContainsSingle(compilation.SyntaxTrees.Where(static tree => tree.FilePath == "Consumer.cs"));
-        var invocation = Assert.ContainsSingle(tree.GetRoot(testContext.CancellationToken).DescendantNodes()
-            .OfType<InvocationExpressionSyntax>()
-            .Where(invocation => invocation.Expression is MemberAccessExpressionSyntax member && member.Name.Identifier.ValueText == method));
-        var model = compilation.GetSemanticModel(tree);
-        var original = Assert.IsInstanceOfType<IMethodSymbol>(model.GetSymbolInfo(invocation, testContext.CancellationToken).Symbol);
-        var interceptor = model.GetInterceptorMethod(invocation, testContext.CancellationToken);
-        Assert.IsNotNull(interceptor);
-        return (original, interceptor);
-    }
-
-    private Diagnostic[] CompilerProblems(Compilation compilation) =>
-    [
-        .. compilation.GetDiagnostics(testContext.CancellationToken)
-            .Where(static diagnostic => diagnostic.Severity is DiagnosticSeverity.Warning or DiagnosticSeverity.Error)
-    ];
-
-    private void AssertCompilerDiagnostics(Compilation compilation, string[] expected)
-    {
-        var diagnostics = CompilerProblems(compilation);
-        Assert.AreSequenceEqual([.. expected.Order(StringComparer.Ordinal)],
-            [.. diagnostics.Select(static diagnostic => diagnostic.Id).Order(StringComparer.Ordinal)],
-            string.Join(Environment.NewLine, diagnostics.Select(static diagnostic => diagnostic.ToString())));
-    }
-
-    private (GeneratorRunResult Result, CSharpCompilation Compilation) Run(string source, bool commandSource = false,
-        string[]? expectedCompilerDiagnostics = null, string[]? expectedGeneratorDiagnostics = null)
-    {
-        var trees = new List<SyntaxTree> { CSharpSyntaxTree.ParseText(source, ParseOptions, "Consumer.cs", cancellationToken: testContext.CancellationToken) };
-        if (commandSource)
-            trees.Add(CSharpSyntaxTree.ParseText("using System; using System.Threading; using System.Threading.Tasks;\n" + File.ReadAllText(Repo.Root / "tests/Qyl.Telemetry.AutoInstrumentation.SourceGenerators.Snapshots/Fixture/SnapshotCommand.cs"), ParseOptions, "SnapshotCommand.cs", cancellationToken: testContext.CancellationToken));
-        var references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator)
-            .Append(typeof(QylGeneratedCodeAbi).Assembly.Location)
-            .Append(typeof(Confluent.Kafka.IProducer<,>).Assembly.Location)
-            .Append(typeof(System.ServiceModel.ClientBase<>).Assembly.Location).Distinct(StringComparer.Ordinal)
-            .Select(static path => MetadataReference.CreateFromFile(path));
-        var compilation = CSharpCompilation.Create("GeneratorConsumer", trees, references,
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable,
-                generalDiagnosticOption: ReportDiagnostic.Error));
-        AssertCompilerDiagnostics(compilation, expectedCompilerDiagnostics ?? []);
-        GeneratorDriver driver = CSharpGeneratorDriver.Create([new QylAutoInstrumentationGenerator().AsSourceGenerator()], parseOptions: ParseOptions);
-        driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out var updated, out _, testContext.CancellationToken);
-        AssertCompilerDiagnostics(updated, expectedCompilerDiagnostics ?? []);
-        var result = Assert.ContainsSingle(driver.GetRunResult().Results);
-        var generatorProblems = result.Diagnostics
-            .Where(static diagnostic => diagnostic.Severity is DiagnosticSeverity.Warning or DiagnosticSeverity.Error).ToArray();
-        Assert.AreSequenceEqual([.. (expectedGeneratorDiagnostics ?? []).Order(StringComparer.Ordinal)],
-            [.. generatorProblems.Select(static diagnostic => diagnostic.Id).Order(StringComparer.Ordinal)],
-            string.Join(Environment.NewLine, generatorProblems.Select(static diagnostic => diagnostic.ToString())));
-        return (result, (CSharpCompilation)updated);
     }
 }

@@ -13,38 +13,84 @@ namespace Qyl.Telemetry.Integration.Tests;
 [TestClass]
 public sealed class HostConfigurationTests(TestContext testContext)
 {
+    private const string SessionId = "checkout-session";
+
     [TestMethod]
-    public void AspNetCore_registration_is_fluent_and_idempotent()
+    public void AddQylAspNetCoreInstrumentation_FirstCall_ReturnsTheSameCollection()
     {
         var services = new ServiceCollection();
+
         Assert.AreSame(services, services.AddQylAspNetCoreInstrumentation());
-        var first = Assert.ContainsSingle(services.Where(static service => service.ServiceType == typeof(IStartupFilter)));
+    }
+
+    [TestMethod]
+    public void AddQylAspNetCoreInstrumentation_FirstCall_RegistersOneStartupFilter()
+    {
+        var services = new ServiceCollection();
+
+        services.AddQylAspNetCoreInstrumentation();
+
+        Assert.ContainsSingle(services.Where(static service => service.ServiceType == typeof(IStartupFilter)));
+    }
+
+    [TestMethod]
+    public void AddQylAspNetCoreInstrumentation_SecondCall_ReturnsTheSameCollection()
+    {
+        var services = new ServiceCollection();
+        services.AddQylAspNetCoreInstrumentation();
+
         Assert.AreSame(services, services.AddQylAspNetCoreInstrumentation());
+    }
+
+    [TestMethod]
+    public void AddQylAspNetCoreInstrumentation_SecondCall_KeepsTheFirstStartupFilter()
+    {
+        var services = new ServiceCollection();
+        services.AddQylAspNetCoreInstrumentation();
+        var first = services.Single(static service => service.ServiceType == typeof(IStartupFilter));
+
+        services.AddQylAspNetCoreInstrumentation();
+
         Assert.AreSame(first, Assert.ContainsSingle(services.Where(static service => service.ServiceType == typeof(IStartupFilter))));
     }
 
     [TestMethod]
-    public async Task Explicit_resource_identity_and_disabled_metric_export_are_honored()
+    [DataRow("service.namespace", "shop")]
+    [DataRow("deployment.environment.name", "preview")]
+    public async Task AddQyl_ExplicitResourceIdentity_SetsTheResourceAttribute(string attribute, string value)
+    {
+        using var host = await StartInMemoryHostAsync("Shop.Resource." + Guid.NewGuid().ToString("N"), [], ConfigureIdentity);
+
+        var resource = host.Services.GetRequiredService<TracerProvider>().GetResource().Attributes
+            .ToDictionary(static pair => pair.Key, static pair => pair.Value);
+
+        Assert.AreEqual(value, resource[attribute]);
+        await host.StopAsync(testContext.CancellationToken);
+    }
+
+    [TestMethod]
+    public async Task AddQyl_MetricExportDisabled_RegistersNoMeterProvider()
+    {
+        using var host = await StartInMemoryHostAsync("Shop.Resource." + Guid.NewGuid().ToString("N"), [], ConfigureIdentity);
+
+        Assert.IsNull(host.Services.GetService<MeterProvider>());
+        await host.StopAsync(testContext.CancellationToken);
+    }
+
+    [TestMethod]
+    public async Task AddQyl_ExplicitResourceIdentity_ExportsTheAdditionalSourcesSpan()
     {
         var captured = new List<Activity>();
         var sourceName = "Shop.Resource." + Guid.NewGuid().ToString("N");
-        using var host = await StartInMemoryHostAsync(sourceName, captured, static options =>
-        {
-            options.ServiceName = "checkout-config";
-            options.ServiceNamespace = "shop";
-            options.DeploymentEnvironment = "preview";
-        });
-        var provider = host.Services.GetRequiredService<TracerProvider>();
-        var resource = provider.GetResource().Attributes.ToDictionary(static attribute => attribute.Key, static attribute => attribute.Value);
-        Assert.AreEqual("shop", resource["service.namespace"]);
-        Assert.AreEqual("preview", resource["deployment.environment.name"]);
-        Assert.IsNull(host.Services.GetService<MeterProvider>());
+        using var host = await StartInMemoryHostAsync(sourceName, captured, ConfigureIdentity);
+
         using (var source = new ActivitySource(sourceName))
+        using (source.CreateActivity("configured.operation", ActivityKind.Internal)?.Start())
         {
-            using var span = source.CreateActivity("configured.operation", ActivityKind.Internal)?.Start();
-            Assert.IsNotNull(span);
         }
-        Assert.IsTrue(provider.ForceFlush());
+        var flushed = host.Services.GetRequiredService<TracerProvider>().ForceFlush();
+
+        Assert.IsTrue(flushed);
         Assert.AreEqual("configured.operation", Assert.ContainsSingle(captured).OperationName);
         await host.StopAsync(testContext.CancellationToken);
     }
@@ -52,24 +98,47 @@ public sealed class HostConfigurationTests(TestContext testContext)
     [TestMethod]
     [DataRow(true)]
     [DataRow(false)]
-    public async Task Session_inheritance_follows_the_explicit_option(bool enabled)
+    public async Task SessionTagInheritance_EitherOption_ExportsParentAndChild(bool enabled)
+    {
+        var captured = await RunSessionParentAndChildAsync(enabled);
+
+        Assert.AreSequenceEqual(["child", "parent"], captured.Select(static span => span.OperationName));
+    }
+
+    [TestMethod]
+    [DataRow(true, SessionId)]
+    [DataRow(false, null)]
+    public async Task SessionTagInheritance_ExplicitOption_DecidesTheChildSession(bool enabled, string? childSession)
+    {
+        var captured = await RunSessionParentAndChildAsync(enabled);
+
+        Assert.AreEqual(childSession, captured.Single(static span => span.OperationName == "child").GetTagItem(SessionAttributes.Id));
+    }
+
+    private static void ConfigureIdentity(QylTelemetryOptions options)
+    {
+        options.ServiceName = "checkout-config";
+        options.ServiceNamespace = "shop";
+        options.DeploymentEnvironment = "preview";
+    }
+
+    /// <summary>Starts a parent, a child beneath it, then tags only the parent with a session; returns the flushed export.</summary>
+    private async Task<List<Activity>> RunSessionParentAndChildAsync(bool enabled)
     {
         var captured = new List<Activity>();
         var sourceName = "Shop.Session." + Guid.NewGuid().ToString("N");
         using var host = await StartInMemoryHostAsync(sourceName, captured, options => options.EnableSessionTagInheritance = enabled);
         using (var source = new ActivitySource(sourceName))
         {
-            using var parent = source.CreateActivity("parent", ActivityKind.Internal)?.Start();
-            Assert.IsNotNull(parent);
+            using var parent = source.CreateActivity("parent", ActivityKind.Internal)?.Start()
+                               ?? throw new InvalidOperationException($"AddQyl did not subscribe to {sourceName}.");
             using var child = source.CreateActivity("child", ActivityKind.Internal)?.Start();
-            Assert.IsNotNull(child);
-            parent.SetTag(SessionAttributes.Id, "checkout-session");
+            parent.SetTag(SessionAttributes.Id, SessionId);
         }
-        Assert.IsTrue(host.Services.GetRequiredService<TracerProvider>().ForceFlush());
-        Assert.HasCount(2, captured);
-        var exportedChild = Assert.ContainsSingle(captured.Where(static span => span.OperationName == "child"));
-        Assert.AreEqual(enabled ? "checkout-session" : null, exportedChild.GetTagItem(SessionAttributes.Id));
+        if (!host.Services.GetRequiredService<TracerProvider>().ForceFlush())
+            throw new InvalidOperationException("The tracer provider did not flush.");
         await host.StopAsync(testContext.CancellationToken);
+        return captured;
     }
 
     private async Task<IHost> StartInMemoryHostAsync(string sourceName, List<Activity> captured, Action<QylTelemetryOptions>? configure = null)

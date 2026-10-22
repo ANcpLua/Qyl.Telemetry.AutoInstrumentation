@@ -15,9 +15,9 @@ sealed partial class QylBuild
             results.CreateDirectory();
             var filter = _lane.Length == 0 ? Array.Empty<string>() : new[] { "--filter", string.Join('|', lanes.Select(static lane => "TestCategory=" + lane.Name)) };
             // Every lane runs at least ten cases; the smallest, wcf-client, runs exactly ten. Full
-            // discovery also includes four representation, twenty-two transport, three generator and
-            // four host-configuration cases. Missing that coverage must fail the run.
-            var minimum = lanes.Count * 10 + (_lane.Length == 0 ? 33 : 0);
+            // discovery also includes twenty-nine representation, twenty-two transport, eighty-six
+            // generator and twelve host-configuration cases. Missing that coverage must fail the run.
+            var minimum = lanes.Count * 10 + (_lane.Length == 0 ? 149 : 0);
             Shell.Checked("dotnet", ["run", "--project", Repo.IntegrationTests, "-c", "Release", "--",
                 "--report-trx", "--results-directory", results, "--minimum-expected-tests", minimum.ToString(System.Globalization.CultureInfo.InvariantCulture), .. filter],
                 Repo.Root, timeout: TimeSpan.FromHours(3), echo: true);

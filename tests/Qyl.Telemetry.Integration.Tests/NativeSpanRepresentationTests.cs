@@ -10,65 +10,118 @@ namespace Qyl.Telemetry.Integration.Tests;
 [TestClass]
 public sealed class NativeSpanRepresentationTests
 {
-    [TestMethod]
-    [DataRow("Experimental.Microsoft.Extensions.AI")]
-    [DataRow("Experimental.Microsoft.Agents.AI")]
-    public void Known_AI_finish_reason_arrays_convert_losslessly_and_invalid_values_remain_visible(string sourceName)
-    {
-        WithPipeline(sourceName, source =>
-        {
-            Assert.AreSequenceEqual(["stop", "", "line\nbreak", "quoted\"value"],
-                Assert.IsInstanceOfType<string[]>(Export(source, GenAiAttributes.ResponseFinishReasons,
-                    "[\"stop\",\"\",\"line\\nbreak\",\"quoted\\\"value\"]")));
-            Assert.IsEmpty(Assert.IsInstanceOfType<string[]>(Export(source, GenAiAttributes.ResponseFinishReasons, "[]")));
-            foreach (var original in new[] { "[\"stop\",1]", "[null]", "{}", "null", "\"stop\"", "{" })
-                Assert.AreEqual(original, Export(source, GenAiAttributes.ResponseFinishReasons, original));
-        });
-    }
+    private const string MeaiSource = "Experimental.Microsoft.Extensions.AI";
+    private const string AgentsSource = "Experimental.Microsoft.Agents.AI";
+    private const string MassTransitSource = "MassTransit";
+    private const string OtherProducerSource = "qyl.tests.other-producer";
 
     [TestMethod]
-    public void MassTransit_message_sizes_preserve_exact_nonnegative_Int64_and_retain_unconvertible_values()
+    [DataRow(MeaiSource)]
+    [DataRow(AgentsSource)]
+    public void GenAiFinishReasons_JsonStringArray_ExportAsAStringArray(string source)
     {
-        WithPipeline("MassTransit", source =>
-        {
-            Assert.AreEqual(0L, Assert.IsInstanceOfType<long>(Export(source, MessagingAttributes.MessageBodySize, "0")));
-            Assert.AreEqual(long.MaxValue, Assert.IsInstanceOfType<long>(Export(source, MessagingAttributes.MessageBodySize, "9223372036854775807")));
-            foreach (var original in new[] { "9223372036854775808", "-1", "+1", "1.0", " 1", "1 ", "", "bytes" })
-                Assert.AreEqual(original, Export(source, MessagingAttributes.MessageBodySize, original));
-        });
+        using var pipeline = new RepresentationPipeline(source);
+
+        var exported = pipeline.Export(GenAiAttributes.ResponseFinishReasons, "[\"stop\",\"\",\"line\\nbreak\",\"quoted\\\"value\"]");
+
+        Assert.AreSequenceEqual(["stop", "", "line\nbreak", "quoted\"value"], Assert.IsInstanceOfType<string[]>(exported));
     }
 
     [TestMethod]
-    public void Other_producers_and_unrelated_attributes_are_not_converted()
+    [DataRow(MeaiSource)]
+    [DataRow(AgentsSource)]
+    public void GenAiFinishReasons_EmptyJsonArray_ExportAsAnEmptyArray(string source)
     {
-        WithPipeline("qyl.tests.other-producer", source =>
-        {
-            Assert.AreEqual("[\"stop\"]", Export(source, GenAiAttributes.ResponseFinishReasons, "[\"stop\"]"));
-            Assert.AreEqual("42", Export(source, MessagingAttributes.MessageBodySize, "42"));
-        });
-        WithPipeline("MassTransit", source =>
-            Assert.AreEqual("42", Export(source, "checkout.text", "42")));
+        using var pipeline = new RepresentationPipeline(source);
+
+        var exported = pipeline.Export(GenAiAttributes.ResponseFinishReasons, "[]");
+
+        Assert.IsEmpty(Assert.IsInstanceOfType<string[]>(exported));
     }
 
-    private readonly List<Activity> _exported = [];
-
-    private object? Export(ActivitySource source, string key, string value)
+    [TestMethod]
+    [DataRow(MeaiSource, "[\"stop\",1]")]
+    [DataRow(MeaiSource, "[null]")]
+    [DataRow(MeaiSource, "{}")]
+    [DataRow(MeaiSource, "null")]
+    [DataRow(MeaiSource, "\"stop\"")]
+    [DataRow(MeaiSource, "{")]
+    [DataRow(AgentsSource, "[\"stop\",1]")]
+    [DataRow(AgentsSource, "[null]")]
+    [DataRow(AgentsSource, "{}")]
+    [DataRow(AgentsSource, "null")]
+    [DataRow(AgentsSource, "\"stop\"")]
+    [DataRow(AgentsSource, "{")]
+    public void GenAiFinishReasons_NotAStringArray_ExportUnchanged(string source, string original)
     {
-        _exported.Clear();
-        using (var activity = source.CreateActivity("wire-representation", ActivityKind.Internal)?.Start())
-        {
-            Assert.IsNotNull(activity);
-            activity.SetTag(key, value);
-        }
-        return Assert.ContainsSingle(_exported).GetTagItem(key);
+        using var pipeline = new RepresentationPipeline(source);
+
+        Assert.AreEqual(original, pipeline.Export(GenAiAttributes.ResponseFinishReasons, original));
     }
 
-    private void WithPipeline(string sourceName, Action<ActivitySource> exercise)
+    [TestMethod]
+    [DataRow("0", 0L)]
+    [DataRow("9223372036854775807", long.MaxValue)]
+    public void MassTransitBodySize_NonnegativeInt64Text_ExportsTheExactInt64(string text, long size)
     {
-        var previousEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT");
-        try
+        using var pipeline = new RepresentationPipeline(MassTransitSource);
+
+        Assert.AreEqual(size, Assert.IsInstanceOfType<long>(pipeline.Export(MessagingAttributes.MessageBodySize, text)));
+    }
+
+    [TestMethod]
+    [DataRow("9223372036854775808")]
+    [DataRow("-1")]
+    [DataRow("+1")]
+    [DataRow("1.0")]
+    [DataRow(" 1")]
+    [DataRow("1 ")]
+    [DataRow("")]
+    [DataRow("bytes")]
+    public void MassTransitBodySize_UnconvertibleText_ExportsUnchanged(string original)
+    {
+        using var pipeline = new RepresentationPipeline(MassTransitSource);
+
+        Assert.AreEqual(original, pipeline.Export(MessagingAttributes.MessageBodySize, original));
+    }
+
+    [TestMethod]
+    public void OtherProducer_FinishReasonsJson_ExportsUnchanged()
+    {
+        using var pipeline = new RepresentationPipeline(OtherProducerSource);
+
+        Assert.AreEqual("[\"stop\"]", pipeline.Export(GenAiAttributes.ResponseFinishReasons, "[\"stop\"]"));
+    }
+
+    [TestMethod]
+    public void OtherProducer_NumericBodySize_ExportsUnchanged()
+    {
+        using var pipeline = new RepresentationPipeline(OtherProducerSource);
+
+        Assert.AreEqual("42", pipeline.Export(MessagingAttributes.MessageBodySize, "42"));
+    }
+
+    [TestMethod]
+    public void MassTransit_UnrelatedNumericAttribute_ExportsUnchanged()
+    {
+        using var pipeline = new RepresentationPipeline(MassTransitSource);
+
+        Assert.AreEqual("42", pipeline.Export("checkout.text", "42"));
+    }
+
+    /// <summary>
+    /// A built AddQyl host with an in-memory exporter, subscribed to one source and with no OTLP endpoint
+    /// in the environment; <see cref="Export" /> returns the value one exported span carries.
+    /// </summary>
+    private sealed class RepresentationPipeline : IDisposable
+    {
+        private readonly EnvironmentScope _environment = new(("OTEL_EXPORTER_OTLP_ENDPOINT", null));
+        private readonly List<Activity> _exported = [];
+        private readonly IHost _host;
+        private readonly ActivitySource _source;
+
+        public RepresentationPipeline(string sourceName)
         {
-            Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", null);
             var builder = new HostApplicationBuilder(new HostApplicationBuilderSettings { DisableDefaults = true });
             builder.AddQyl(options =>
             {
@@ -79,15 +132,28 @@ public sealed class NativeSpanRepresentationTests
                 options.AdditionalSources.Add(sourceName);
                 options.ConfigureTracing = tracing => tracing.AddInMemoryExporter(_exported);
             });
-            using var host = builder.Build();
-            _ = host.Services.GetRequiredService<TracerProvider>();
-            using var source = new ActivitySource(sourceName);
-            exercise(source);
+            _host = builder.Build();
+            _ = _host.Services.GetRequiredService<TracerProvider>();
+            _source = new ActivitySource(sourceName);
         }
-        finally
+
+        public object? Export(string key, string value)
         {
             _exported.Clear();
-            Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", previousEndpoint);
+            using (var activity = _source.CreateActivity("wire-representation", ActivityKind.Internal)?.Start()
+                                  ?? throw new InvalidOperationException($"AddQyl did not subscribe to {_source.Name}."))
+            {
+                activity.SetTag(key, value);
+            }
+
+            return _exported.Single().GetTagItem(key);
+        }
+
+        public void Dispose()
+        {
+            _source.Dispose();
+            _host.Dispose();
+            _environment.Dispose();
         }
     }
 }
