@@ -150,8 +150,7 @@ internal static class QylDbQuerySummary
 
                 if (current is '/' && Peek(1) is '*')
                 {
-                    var end = text.IndexOf("*/", _position + 2, StringComparison.Ordinal);
-                    _position = end < 0 ? text.Length : end + 2;
+                    SkipBlockComment();
                     continue;
                 }
 
@@ -190,6 +189,32 @@ internal static class QylDbQuerySummary
 
         private char Peek(int offset)
             => _position + offset < text.Length ? text[_position + offset] : '\0';
+
+        // SQL Server and PostgreSQL nest block comments, so "/* a /* b */ c */" is one comment. A
+        // comment that never closes runs to the end of the text.
+        private void SkipBlockComment()
+        {
+            var depth = 0;
+            while (_position < text.Length)
+            {
+                if (text[_position] is '/' && Peek(1) is '*')
+                {
+                    depth++;
+                    _position += 2;
+                    continue;
+                }
+
+                if (text[_position] is '*' && Peek(1) is '/')
+                {
+                    _position += 2;
+                    if (--depth is 0)
+                        return;
+                    continue;
+                }
+
+                _position++;
+            }
+        }
 
         // A balanced group holds sub-queries, column lists, and argument lists; nothing inside it is a
         // target, and a quote or marker inside it ends the scan exactly as it would outside.
