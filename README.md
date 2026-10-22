@@ -203,7 +203,8 @@ Every row above is gated per signal by its instrumentation id:
   through `OTEL_DOTNET_AUTO_METRICS_ADDITIONAL_SOURCES` or `QylTelemetryOptions.AdditionalMeters`.
 
 The full 70-row contract, with every environment control, instrumentation option, evidence level
-and authoritative source, is the generated [coverage matrix](contracts/coverage-matrix.md).
+and authoritative source, is the generated
+[resolved contract](contracts/generated/qyl-aot-contract.resolved.yaml).
 
 ### Selected outbound HTTP headers
 

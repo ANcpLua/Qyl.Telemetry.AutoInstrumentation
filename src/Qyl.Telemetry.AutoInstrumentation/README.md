@@ -42,6 +42,6 @@ global `OTEL_DOTNET_AUTO_INSTRUMENTATION_ENABLED` taking precedence. Everything 
 - The instrumented libraries, how interception works, and the qyl attributes:
   [repository README](https://github.com/ANcpLua/Qyl.Telemetry.AutoInstrumentation#readme)
 - Every environment control with its evidence:
-  [coverage matrix](https://github.com/ANcpLua/Qyl.Telemetry.AutoInstrumentation/blob/main/contracts/coverage-matrix.md)
+  [resolved contract](https://github.com/ANcpLua/Qyl.Telemetry.AutoInstrumentation/blob/main/contracts/generated/qyl-aot-contract.resolved.yaml)
 - Changes per version:
   [CHANGELOG](https://github.com/ANcpLua/Qyl.Telemetry.AutoInstrumentation/blob/main/CHANGELOG.md)

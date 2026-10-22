@@ -35,8 +35,7 @@ ownership_items:
   payload_access: reflection_required
   evidence_level: none
   primary_owner: unsupported by qyl NativeAOT substrate
-  evidence:
-  - contracts/coverage-matrix.md
+  evidence: []
   unsupported_reason: 'Classic ASP.NET (System.Web MVC/WebApi) executes only on .NET Framework 4.x inside
     IIS; System.Web does not exist on .NET 10, so no in-process mechanism is available to this managed
     substrate. Devil''s-advocate check (2026-07-18): Microsoft.AspNetCore.SystemWebAdapters covers apps
@@ -581,8 +580,7 @@ ownership_items:
   payload_access: reflection_required
   evidence_level: none
   primary_owner: unsupported by qyl NativeAOT substrate
-  evidence:
-  - contracts/coverage-matrix.md
+  evidence: []
   unsupported_reason: System.ServiceModel server-side hosting (ServiceHost/ChannelDispatcher) does not
     exist on modern .NET; the promise as written is dead on .NET 10. The successor surface is CoreWCF
     (see signals.traces.WCFCORE).
@@ -594,8 +592,7 @@ ownership_items:
   payload_access: reflection_required
   evidence_level: none
   primary_owner: unsupported by qyl NativeAOT substrate
-  evidence:
-  - contracts/coverage-matrix.md
+  evidence: []
   unsupported_reason: Upstream emits these metrics from the System.Web TelemetryHttpModule pipeline (.NET
     Framework-only) and gates them on the AspNet trace instrumentation, which is itself impossible here
     (see signals.traces.ASPNET).

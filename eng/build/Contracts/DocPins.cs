@@ -12,7 +12,7 @@ namespace Qyl.Build.Contracts;
 /// <item>every hard-coded SEMCONV_REF and every `v…` registry tag in a tracked file (the CHANGELOG's
 /// history and its archive aside), against v + the Qyl.Telemetry.SemanticConventions pin, which the live check derives
 /// its registry tag from;</item>
-/// <item>the N-row contract count, against the total in contracts/coverage-matrix.md;</item>
+/// <item>the N-row contract count, against the resolved contract's item total;</item>
 /// <item>a QylGeneratedCodeAbi.V&lt;N&gt; anchor, against the Directory.Build.props major;</item>
 /// <item>a nuget.org/packages/&lt;id&gt;/&lt;version&gt; link in a contract YAML, against Directory.Packages.props.</item>
 /// </list>
@@ -142,12 +142,11 @@ static partial class DocPins
 
     private static void CheckRowCount(AbsolutePath path, string text, List<string> errors)
     {
-        var total = TotalRow().Match(File.ReadAllText(ContractModel.CoverageMatrixPath));
-        Gate.Require(total.Success, $"doc-pins: {Repo.Relative(ContractModel.CoverageMatrixPath)} has no 'Total contract items' row");
+        var total = ContractModel.TotalContractItemCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
         foreach (Match match in RowContract().Matches(text))
         {
-            if (match.Groups[1].Value != total.Groups[1].Value)
-                errors.Add($"{Repo.Relative(path)}: {match.Groups[1].Value}-row contract != coverage matrix total {total.Groups[1].Value}");
+            if (match.Groups[1].Value != total)
+                errors.Add($"{Repo.Relative(path)}: {match.Groups[1].Value}-row contract != contract item total {total}");
         }
     }
 
@@ -183,9 +182,6 @@ static partial class DocPins
     // A hard-coded SEMCONV_REF (shell, env file, TOML, YAML or MSBuild) or a backticked registry tag.
     [GeneratedRegex(@"SEMCONV_REF\s*[:=>]\s*[""']?(?<ref>v?\d+\.\d+\.\d+[^\s""'`;<]*)|`(?<ref>v\d+\.\d+\.\d+[^`]*)` registry")]
     private static partial Regex RegistryReference();
-
-    [GeneratedRegex(@"^\| Total contract items \| (\d+) \|$", RegexOptions.Multiline)]
-    private static partial Regex TotalRow();
 
     [GeneratedRegex(@"(\d+)-row contract")]
     private static partial Regex RowContract();

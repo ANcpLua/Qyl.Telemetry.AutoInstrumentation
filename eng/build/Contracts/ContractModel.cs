@@ -16,7 +16,6 @@ static class ContractModel
     public static AbsolutePath OwnershipPath => Repo.ContractsDirectory / "qyl-aot-ownership.yaml";
     public static AbsolutePath ResolvedContractPath => Repo.ContractsDirectory / "generated" / "qyl-aot-contract.resolved.yaml";
     public static AbsolutePath SchemaPath => Repo.ContractsDirectory / "generated" / "qyl-aot-contract.schema.json";
-    public static AbsolutePath CoverageMatrixPath => Repo.ContractsDirectory / "coverage-matrix.md";
     public static AbsolutePath ConformancePlanPath => Repo.ContractsDirectory / "qyl-aot-autoinstrumentation.conformance-plan.json";
 
     public const string UpstreamOrigin = "upstream_otel_dotnet_auto_60";
