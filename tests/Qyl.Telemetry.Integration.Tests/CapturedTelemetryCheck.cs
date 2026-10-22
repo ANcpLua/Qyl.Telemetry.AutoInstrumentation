@@ -23,7 +23,7 @@ sealed class CapturedTelemetryCheck(string serviceName)
     public void ServiceSpansExactly(DemoRun run, IReadOnlyCollection<string> spanIds, string what)
     {
         var actual = run.Telemetry.Spans.Where(span => span.Service == serviceName).Select(static span => span.SpanId).ToArray();
-        CollectionAssert.AreEquivalent(spanIds.ToArray(), actual, $"{run.Label}: unexpected {what} span identities");
+        Assert.AreSequenceEqual(spanIds, actual, SequenceOrder.InAnyOrder, $"{run.Label}: unexpected {what} span identities");
     }
 
     public void Metrics(DemoRun run, IEnumerable<ReportedMetric> metrics)
@@ -33,9 +33,9 @@ sealed class CapturedTelemetryCheck(string serviceName)
             var candidates = run.Telemetry.Metrics.Where(metric => metric.Name == expected.Name &&
                 (expected.ScopeName is null || metric.Scope?.Name == expected.ScopeName) &&
                 metric.Resource.Attributes.TryGetValue("service.name", out var service) && Equals(service, serviceName)).ToArray();
-            Assert.IsTrue(candidates.SelectMany(static metric => Points(metric.Data)).Any(attributes =>
+            Assert.Contains(attributes =>
                     expected.Attributes.All(pair => attributes.TryGetValue(pair.Key, out var value) &&
-                                                    Text(value) == pair.Value)),
+                                                    Text(value) == pair.Value), candidates.SelectMany(static metric => Points(metric.Data)),
                 $"{run.Label}: no exported {expected.Name} point carries all reported attributes: {string.Join(", ", expected.Attributes)}");
         }
     }
@@ -43,7 +43,7 @@ sealed class CapturedTelemetryCheck(string serviceName)
     public void NoMetrics(DemoRun run, IEnumerable<string> metricNames)
     {
         var names = metricNames.ToHashSet(StringComparer.Ordinal);
-        Assert.IsFalse(run.Telemetry.Metrics.Any(metric => names.Contains(metric.Name)),
+        Assert.DoesNotContain(metric => names.Contains(metric.Name), run.Telemetry.Metrics,
             $"{run.Label}: a disabled metric was exported: {string.Join(", ", names)}");
     }
 
@@ -75,7 +75,10 @@ sealed class CapturedTelemetryCheck(string serviceName)
         if (ReportedActivity.Text(expected, "Name") is { } name)
             Assert.AreEqual(name, span.Name, context + " name");
         if (ReportedActivity.Text(expected, "Source") is { } source)
-            Assert.AreEqual(source, span.Scope?.Name, context + " scope");
+        {
+            Assert.IsNotNull(span.Scope, context + " scope");
+            Assert.AreEqual(source, span.Scope.Name, context + " scope");
+        }
         if (ReportedActivity.Text(expected, "Kind") is { } kind)
             Assert.AreEqual(kind, span.Kind.ToString(), context + " kind");
         if (ReportedActivity.Text(expected, "ParentSpanId") is { } parent)

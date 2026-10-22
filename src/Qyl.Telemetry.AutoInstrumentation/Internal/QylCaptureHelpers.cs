@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Net.Http.Headers;
 using System.Text;
 using Microsoft.AspNetCore.Http;
@@ -10,32 +11,31 @@ internal static class QylCaptureHelpers
 {
     internal static void SetHttpClientRequestHeaders(Activity? activity, QylCapturedNameMap map, HttpRequestMessage? request)
     {
-        if (activity is not { IsAllDataRequested: true } || request is null || map.Count is 0)
-            return;
-        SetHttpHeaders(activity, map, request.Headers, request.Content?.Headers);
+        if (CanCapture(activity, map, request))
+            SetHttpHeaders(activity, map, request.Headers, request.Content?.Headers);
     }
 
     internal static void SetHttpClientResponseHeaders(Activity? activity, QylCapturedNameMap map, HttpResponseMessage? response)
     {
-        if (activity is not { IsAllDataRequested: true } || response is null || map.Count is 0)
-            return;
-        SetHttpHeaders(activity, map, response.Headers, response.Content.Headers);
+        if (CanCapture(activity, map, response))
+            SetHttpHeaders(activity, map, response.Headers, response.Content.Headers);
     }
 
     internal static void SetGrpcRequestMetadata(Activity? activity, QylCapturedNameMap map, HttpRequestMessage? request)
     {
-        if (activity is not { IsAllDataRequested: true } || request is null || map.Count is 0)
-            return;
         // gRPC binary metadata is already base64-encoded by the HTTP transport.
-        SetHttpHeaders(activity, map, request.Headers, null);
+        if (CanCapture(activity, map, request))
+            SetHttpHeaders(activity, map, request.Headers, null);
     }
 
     internal static void SetGrpcResponseMetadata(Activity? activity, QylCapturedNameMap map, HttpResponseMessage? response)
     {
-        if (activity is not { IsAllDataRequested: true } || response is null || map.Count is 0)
-            return;
-        SetHttpHeaders(activity, map, response.Headers, response.TrailingHeaders);
+        if (CanCapture(activity, map, response))
+            SetHttpHeaders(activity, map, response.Headers, response.TrailingHeaders);
     }
+
+    private static bool CanCapture([NotNullWhen(true)] Activity? activity, QylCapturedNameMap map, [NotNullWhen(true)] object? message)
+        => activity is { IsAllDataRequested: true } && message is not null && map.Count is not 0;
 
     private static void SetHttpHeaders(Activity activity, QylCapturedNameMap map, HttpHeaders primary, HttpHeaders? additional)
     {

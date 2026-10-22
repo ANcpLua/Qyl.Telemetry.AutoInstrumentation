@@ -39,12 +39,12 @@ public sealed class GenAiTests(TestContext testContext)
             lane.With([.. scenarios.Select(static scenario => (scenario.Variable, "false"))]))), [], []);
     }
 
-    private static string[] Without(string[] values, string removed) => values.Where(value => value != removed).ToArray();
+    private static string[] Without(string[] values, string removed) => [.. values.Where(value => value != removed)];
 
     private static void Verify(DemoContext lane, DemoRun run, string[] expectedSources, string[] expectedMeters)
     {
         run.RequireSucceeded();
-        Assert.IsTrue(run.StringField("RuntimeMode") == "dynamic-code-supported", $"{run.Label} runtime mode mismatch: {run.StringField("RuntimeMode")}");
+        Assert.AreEqual("dynamic-code-supported", run.StringField("RuntimeMode"), $"{run.Label} runtime mode mismatch: {run.StringField("RuntimeMode")}");
         run.RequirePass()
             .RequireBool("BareResponseVerified", true)
             .RequireBool("AgentResponseVerified", true)
@@ -53,9 +53,9 @@ public sealed class GenAiTests(TestContext testContext)
         var activities = run.Array("Activities");
         var sourceNames = activities.EnumerateArray().Select(static activity => ReportedActivity.Text(activity, "SourceName")).ToHashSet(StringComparer.Ordinal);
         Assert.IsTrue(sourceNames.SetEquals(Sources), $"{run.Label} source mismatch: expected [{string.Join(", ", Sources)}] actual [{string.Join(", ", sourceNames)}]");
-        LaneChecks.ExactStrings(run, "PublishedMeterNames", Meters.Order(StringComparer.Ordinal).ToArray());
+        LaneChecks.ExactStrings(run, "PublishedMeterNames", [.. Meters.Order(StringComparer.Ordinal)]);
         var measurements = run.RequireCount("Measurements", 14, "measurements");
-        LaneChecks.ExactStrings(run, "QylExportedActivitySources", expectedSources.Order(StringComparer.Ordinal).ToArray());
+        LaneChecks.ExactStrings(run, "QylExportedActivitySources", [.. expectedSources.Order(StringComparer.Ordinal)]);
         var exportedMeters = DemoRun.Strings(run.Array("QylExportedMeterNames")).Where(meter => Meters.Contains(meter)).ToHashSet(StringComparer.Ordinal);
         Assert.IsTrue(exportedMeters.SetEquals(expectedMeters), $"{run.Label} Qyl.Telemetry.Hosting exported meter mismatch: expected [{string.Join(", ", expectedMeters.Order(StringComparer.Ordinal))}] actual [{string.Join(", ", exportedMeters.Order(StringComparer.Ordinal))}]");
 
@@ -65,7 +65,7 @@ public sealed class GenAiTests(TestContext testContext)
 
         // What reached the collector is exactly the spans of the subscribed sources, nothing more.
         var exported = activities.EnumerateArray().Where(activity => expectedSources.Contains(ReportedActivity.Text(activity, "SourceName"))).ToArray();
-        lane.Telemetry.ServiceSpansExactly(run, exported.Select(static activity => ReportedActivity.Text(activity, "SpanId")!).ToArray(), "GenAI");
+        lane.Telemetry.ServiceSpansExactly(run, [.. exported.Select(static activity => ReportedActivity.Text(activity, "SpanId")!)], "GenAI");
         lane.Telemetry.Spans(run, JsonSerializer.SerializeToElement(exported), "GenAI");
         var exportedMeasurements = measurements.EnumerateArray()
             .Where(measurement => expectedMeters.Contains(ReportedActivity.Text(measurement, "MeterName")))

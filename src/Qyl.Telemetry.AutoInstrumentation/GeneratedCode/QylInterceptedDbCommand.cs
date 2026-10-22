@@ -55,26 +55,6 @@ public static class QylInterceptedDbCommand
         if (activity is null && !QylDbClientMetrics.IsRecordingEnabled(instrumentationId))
             return task;
 
-        return ObserveSlowAsync(task, activity, metricStart, instrumentationId);
-    }
-
-    private static async Task<T> ObserveSlowAsync<T>(Task<T> task, Activity? activity, long metricStart, string instrumentationId)
-    {
-        try
-        {
-            var result = await task.ConfigureAwait(false);
-            QylDbClientMetrics.RecordDuration(metricStart, instrumentationId);
-            return result;
-        }
-        catch (Exception exception)
-        {
-            QylInterceptedActivity.RecordFailure(activity, exception);
-            QylDbClientMetrics.RecordDuration(metricStart, instrumentationId);
-            throw;
-        }
-        finally
-        {
-            activity?.Dispose();
-        }
+        return QylActivityObserver.ObserveAsync(task, activity, () => QylDbClientMetrics.RecordDuration(metricStart, instrumentationId));
     }
 }

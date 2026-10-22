@@ -28,21 +28,12 @@ public sealed class HostConfigurationTests(TestContext testContext)
     {
         var captured = new List<Activity>();
         var sourceName = "Shop.Resource." + Guid.NewGuid().ToString("N");
-        var builder = new HostApplicationBuilder(new HostApplicationBuilderSettings { DisableDefaults = true });
-        builder.AddQyl(options =>
+        using var host = await StartInMemoryHostAsync(sourceName, captured, static options =>
         {
             options.ServiceName = "checkout-config";
             options.ServiceNamespace = "shop";
             options.DeploymentEnvironment = "preview";
-            options.EnableCollectorDiscovery = false;
-            options.RequireConfiguredEndpoint = true;
-            options.EnableLogExport = false;
-            options.EnableMetricsExport = false;
-            options.AdditionalSources.Add(sourceName);
-            options.ConfigureTracing = tracing => tracing.AddInMemoryExporter(captured);
         });
-        using var host = builder.Build();
-        await host.StartAsync(testContext.CancellationToken);
         var provider = host.Services.GetRequiredService<TracerProvider>();
         var resource = provider.GetResource().Attributes.ToDictionary(static attribute => attribute.Key, static attribute => attribute.Value);
         Assert.AreEqual("shop", resource["service.namespace"]);
@@ -65,19 +56,7 @@ public sealed class HostConfigurationTests(TestContext testContext)
     {
         var captured = new List<Activity>();
         var sourceName = "Shop.Session." + Guid.NewGuid().ToString("N");
-        var builder = new HostApplicationBuilder(new HostApplicationBuilderSettings { DisableDefaults = true });
-        builder.AddQyl(options =>
-        {
-            options.EnableCollectorDiscovery = false;
-            options.RequireConfiguredEndpoint = true;
-            options.EnableLogExport = false;
-            options.EnableMetricsExport = false;
-            options.EnableSessionTagInheritance = enabled;
-            options.AdditionalSources.Add(sourceName);
-            options.ConfigureTracing = tracing => tracing.AddInMemoryExporter(captured);
-        });
-        using var host = builder.Build();
-        await host.StartAsync(testContext.CancellationToken);
+        using var host = await StartInMemoryHostAsync(sourceName, captured, options => options.EnableSessionTagInheritance = enabled);
         using (var source = new ActivitySource(sourceName))
         {
             using var parent = source.CreateActivity("parent", ActivityKind.Internal)?.Start();
@@ -91,5 +70,23 @@ public sealed class HostConfigurationTests(TestContext testContext)
         var exportedChild = Assert.ContainsSingle(captured.Where(static span => span.OperationName == "child"));
         Assert.AreEqual(enabled ? "checkout-session" : null, exportedChild.GetTagItem(SessionAttributes.Id));
         await host.StopAsync(testContext.CancellationToken);
+    }
+
+    private async Task<IHost> StartInMemoryHostAsync(string sourceName, List<Activity> captured, Action<QylTelemetryOptions>? configure = null)
+    {
+        var builder = new HostApplicationBuilder(new HostApplicationBuilderSettings { DisableDefaults = true });
+        builder.AddQyl(options =>
+        {
+            options.EnableCollectorDiscovery = false;
+            options.RequireConfiguredEndpoint = true;
+            options.EnableLogExport = false;
+            options.EnableMetricsExport = false;
+            options.AdditionalSources.Add(sourceName);
+            options.ConfigureTracing = tracing => tracing.AddInMemoryExporter(captured);
+            configure?.Invoke(options);
+        });
+        var host = builder.Build();
+        await host.StartAsync(testContext.CancellationToken);
+        return host;
     }
 }

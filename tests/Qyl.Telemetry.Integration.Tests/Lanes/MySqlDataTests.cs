@@ -61,7 +61,7 @@ public sealed class MySqlDataTests(TestContext testContext)
         var total = SpanSets.Values.Sum(static spans => spans.Length);
         var rereadings = run.RequireCount("StatusCodeRereadings", total, "status-code re-readings").EnumerateArray().ToArray();
         var failing = rereadings.Where(static entry => ReportedActivity.Text(entry, "Phase") == "command-failing-select").ToArray();
-        Assert.IsTrue(failing.Length == 1, $"{run.Label} expected 1 re-reading for the failing command, got {failing.Length}");
+        Assert.HasCount(1, failing, $"{run.Label} expected 1 re-reading for the failing command, got {failing.Length}");
         Assert.IsTrue(ReportedActivity.Text(failing[0], "AtStop") == "ERROR" && ReportedActivity.Text(failing[0], "AfterStop") == "OK",
             $"{run.Label} failing command status codes changed shape: {failing[0]}");
         foreach (var entry in rereadings.Where(static entry => ReportedActivity.Text(entry, "Phase") != "command-failing-select"))
@@ -90,14 +90,13 @@ public sealed class MySqlDataTests(TestContext testContext)
     /// The proof is that the two reports are identical.</summary>
     private static void VerifyStatementCaptureIsUnconditional(DemoRun defaults, DemoRun optIn)
     {
-        static string[] Shape(DemoRun run) => run.Array("Activities").EnumerateArray()
+        static string[] Shape(DemoRun run) => [.. run.Array("Activities").EnumerateArray()
             .Select(static activity => string.Join("|",
                 ReportedActivity.Text(activity, "Phase"),
                 ReportedActivity.Text(activity, "Name"),
                 ReportedActivity.Text(activity, "Kind"),
                 string.Join(",", ReportedActivity.TagKeys(activity).Order(StringComparer.Ordinal)),
-                ReportedActivity.Tag(activity, "db.statement") ?? string.Empty))
-            .ToArray();
+                ReportedActivity.Tag(activity, "db.statement") ?? string.Empty))];
 
         var (left, right) = (Shape(defaults), Shape(optIn));
         Assert.IsTrue(left.SequenceEqual(right), $"OTEL_SEMCONV_STABILITY_OPT_IN changed the MySql.Data span shape:\ndefault={string.Join("\n", left)}\nopt-in={string.Join("\n", right)}");
@@ -106,14 +105,14 @@ public sealed class MySqlDataTests(TestContext testContext)
             .Where(static activity => ReportedActivity.HasTag(activity, "db.statement"))
             .GroupBy(static activity => ReportedActivity.Text(activity, "Phase") ?? string.Empty)
             .ToDictionary(static group => group.Key, static group => ReportedActivity.Tag(group.Last(), "db.statement"), StringComparer.Ordinal);
-        Assert.IsTrue(statements.GetValueOrDefault("command-select") == "SELECT 1 AS qyl_probe_value", $"db.statement is not the full command text: {string.Join(", ", statements)}");
-        Assert.IsTrue(statements.GetValueOrDefault("command-failing-select") == "SELECT qyl_missing_column FROM qyl_missing_table",
+        Assert.AreEqual("SELECT 1 AS qyl_probe_value", statements.GetValueOrDefault("command-select"), $"db.statement is not the full command text: {string.Join(", ", statements)}");
+        Assert.AreEqual("SELECT qyl_missing_column FROM qyl_missing_table", statements.GetValueOrDefault("command-failing-select"),
             $"db.statement is not the full command text on the failing command: {string.Join(", ", statements)}");
     }
 
     private static void VerifyNativeAotLimitation(DemoRun run)
     {
-        Assert.IsTrue(run.Process.ExitCode != 0,
+        Assert.AreNotEqual(0, run.Process.ExitCode,
             "the NativeAOT MySql.Data demo now runs: replace this pinned limitation with the full Verify() the managed runs use");
         var output = run.Process.Stdout + run.Process.Stderr;
         foreach (var marker in NativeAotAbortMarkers)

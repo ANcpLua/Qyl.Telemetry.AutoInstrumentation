@@ -65,7 +65,7 @@ public sealed class SessionPropagationTests(TestContext testContext)
         var deadline = DateTime.UtcNow.AddSeconds(30);
         while (DateTime.UtcNow < deadline)
         {
-            Assert.IsTrue(!process.HasExited, $"downstream exited before it listened\nstdout={process.Stdout}\nstderr={process.Stderr}");
+            Assert.IsFalse(process.HasExited, $"downstream exited before it listened\nstdout={process.Stdout}\nstderr={process.Stderr}");
             try
             {
                 using var probe = new TcpClient();
@@ -84,9 +84,9 @@ public sealed class SessionPropagationTests(TestContext testContext)
     private static DemoRun VerifyProcess(DemoRun run, string role)
     {
         run.RequireSucceeded();
-        Assert.IsTrue(run.StringField("Role") == role, $"{run.Label} reported role {run.StringField("Role")}, expected {role}");
-        Assert.IsTrue(run.StringField("RuntimeMode") == "dynamic-code-supported", $"{run.Label} runtime mode mismatch: {run.StringField("RuntimeMode")}");
-        Assert.IsTrue(run.BoolField("SessionTagInheritanceEnabled") == true, $"{run.Label} ran with session-tag inheritance off — the lane would prove nothing");
+        Assert.AreEqual(role, run.StringField("Role"), $"{run.Label} reported role {run.StringField("Role")}, expected {role}");
+        Assert.AreEqual("dynamic-code-supported", run.StringField("RuntimeMode"), $"{run.Label} runtime mode mismatch: {run.StringField("RuntimeMode")}");
+        Assert.IsTrue(run.BoolField("SessionTagInheritanceEnabled"), $"{run.Label} ran with session-tag inheritance off — the lane would prove nothing");
         run.RequirePass();
         // A shared in-memory exporter, or one process reporting for both roles, dies here.
         var reported = run.Field("ProcessId");
@@ -100,20 +100,20 @@ public sealed class SessionPropagationTests(TestContext testContext)
         var matches = run.Array("Activities").EnumerateArray()
             .Where(activity => ReportedActivity.Text(activity, "Source") == source && ReportedActivity.Text(activity, "Name") == name)
             .ToArray();
-        Assert.IsTrue(matches.Length == 1, $"{run.Label} exported {matches.Length} spans named {source}/{name}, expected exactly 1");
+        Assert.HasCount(1, matches, $"{run.Label} exported {matches.Length} spans named {source}/{name}, expected exactly 1");
         return matches[0];
     }
 
     private static void RequireTag(DemoRun run, JsonElement span, string expected)
     {
         var actual = ReportedActivity.Tag(span, SessionTag);
-        Assert.IsTrue(actual == expected, $"{run.Label} span '{ReportedActivity.Text(span, "Name")}' expected {SessionTag}={expected}, got {actual ?? "absent"}");
+        Assert.AreEqual(expected, actual, $"{run.Label} span '{ReportedActivity.Text(span, "Name")}' expected {SessionTag}={expected}, got {actual ?? "absent"}");
     }
 
     private static void VerifyContract(DemoRun upstream, DemoRun downstream)
     {
         // Two processes, not two hosts.
-        Assert.IsTrue(upstream.Process.ProcessId != downstream.Process.ProcessId, $"both roles reported process id {upstream.Process.ProcessId} — they ran in one process");
+        Assert.AreNotEqual(downstream.Process.ProcessId, upstream.Process.ProcessId, $"both roles reported process id {upstream.Process.ProcessId} — they ran in one process");
 
         var root = Span(upstream, DemoSource, "upstream root");
         var inherited = Span(upstream, DemoSource, "upstream inherits session");
@@ -136,22 +136,22 @@ public sealed class SessionPropagationTests(TestContext testContext)
 
         // The BCL's client span is an in-process descendant like any other.
         RequireTag(upstream, client, SessionId);
-        Assert.IsTrue(ReportedActivity.Text(client, "TraceId") == ReportedActivity.Text(root, "TraceId"),
+        Assert.AreEqual(ReportedActivity.Text(root, "TraceId"), ReportedActivity.Text(client, "TraceId"),
             $"upstream client span is on trace {ReportedActivity.Text(client, "TraceId")}, root is on {ReportedActivity.Text(root, "TraceId")}");
 
         // PROPERTY 3 — one trace, a real remote parent, and the baggage session stamped on the server span.
-        Assert.IsTrue(ReportedActivity.Text(server, "TraceId") == ReportedActivity.Text(client, "TraceId"),
+        Assert.AreEqual(ReportedActivity.Text(client, "TraceId"), ReportedActivity.Text(server, "TraceId"),
             "downstream server span and upstream client span are not on one trace — the two processes are not one trace");
-        Assert.IsTrue(ReportedActivity.Text(server, "ParentSpanId") == ReportedActivity.Text(client, "SpanId"),
+        Assert.AreEqual(ReportedActivity.Text(client, "SpanId"), ReportedActivity.Text(server, "ParentSpanId"),
             $"downstream server span parents to {ReportedActivity.Text(server, "ParentSpanId")}, the upstream client span is {ReportedActivity.Text(client, "SpanId")} — traceparent did not cross the boundary");
-        Assert.IsTrue(ReportedActivity.Text(server, "ParentSpanId") != EmptySpanId, "downstream server span has no remote parent at all");
+        Assert.AreNotEqual(EmptySpanId, ReportedActivity.Text(server, "ParentSpanId"), "downstream server span has no remote parent at all");
         Assert.IsTrue(server.TryGetProperty("HasInProcessParent", out var serverParent) && serverParent.ValueKind is JsonValueKind.False,
             "downstream server span has an IN-PROCESS parent — the roles did not run in two processes");
 
         // The session reached the second process in baggage, which the application put there, and
         // AddQyl stamped it onto the server span; the server span's in-process child inherits it.
         var baggage = server.TryGetProperty("Baggage", out var map) && map.ValueKind is JsonValueKind.Object && map.TryGetProperty(SessionTag, out var value) ? value.GetString() : null;
-        Assert.IsTrue(baggage == SessionId, $"downstream span 'GET /probe' expected baggage {SessionTag}={SessionId}, got {baggage ?? "absent"}");
+        Assert.AreEqual(SessionId, baggage, $"downstream span 'GET /probe' expected baggage {SessionTag}={SessionId}, got {baggage ?? "absent"}");
         RequireTag(downstream, server, SessionId);
         RequireTag(downstream, probeChild, SessionId);
 
@@ -160,7 +160,7 @@ public sealed class SessionPropagationTests(TestContext testContext)
         RequireTag(downstream, localChild, DownstreamSessionId);
         Assert.IsTrue(localChild.TryGetProperty("HasInProcessParent", out var localParent) && localParent.ValueKind is JsonValueKind.True,
             "downstream control child has no in-process parent — the control proves nothing");
-        Assert.IsTrue(ReportedActivity.Text(localChild, "TraceId") != ReportedActivity.Text(server, "TraceId"),
+        Assert.AreNotEqual(ReportedActivity.Text(server, "TraceId"), ReportedActivity.Text(localChild, "TraceId"),
             "downstream control span shares the request trace — it is not the locally rooted control");
     }
 }

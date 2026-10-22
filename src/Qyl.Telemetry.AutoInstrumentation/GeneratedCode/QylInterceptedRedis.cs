@@ -26,9 +26,7 @@ public static class QylInterceptedRedis
             return null;
         }
 
-        activity.SetTag(DbAttributes.SystemName, DbIncubatingAttributes.SystemNameValues.Redis);
-        if (operationName is not null)
-            QylActivityTags.SetDbOperation(activity, operationName, operationName);
+        QylActivityTags.SetDb(activity, DbIncubatingAttributes.SystemNameValues.Redis, operationName, operationName);
         if (databaseNamespace is not null)
             activity.SetTag(DbAttributes.Namespace, databaseNamespace);
 

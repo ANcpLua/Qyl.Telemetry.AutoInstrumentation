@@ -40,7 +40,7 @@ public sealed class McpTests(TestContext testContext)
     {
         run.RequireSucceeded();
         foreach (var sensitive in SensitiveValues)
-            Assert.IsTrue(!run.Stdout.Contains(sensitive, StringComparison.Ordinal), $"{run.Label} leaked a sensitive tool value to telemetry output: {sensitive}");
+            Assert.IsFalse(run.Stdout.Contains(sensitive, StringComparison.Ordinal), $"{run.Label} leaked a sensitive tool value to telemetry output: {sensitive}");
         run.RequireReportPassed()
             .RequireBool("ToolListed", true)
             .RequireBool("ToolCalled", true)
@@ -79,13 +79,13 @@ public sealed class McpTests(TestContext testContext)
             foreach (var (kind, activity) in byKind)
             {
                 var session = ReportedActivity.Tag(activity, "mcp.session.id");
-                Assert.IsTrue(!string.IsNullOrEmpty(session), $"{run.Label} {kind} activity is missing mcp.session.id: {activity}");
+                Assert.IsFalse(string.IsNullOrEmpty(session), $"{run.Label} {kind} activity is missing mcp.session.id: {activity}");
                 sessions[kind].Add(session!);
             }
         }
 
         Assert.IsTrue(sessions.Values.All(static values => values.Count == 1), $"{run.Label} session identifiers were not stable");
-        Assert.IsTrue(!sessions["Client"].SetEquals(sessions["Server"]), $"{run.Label} client/server sessions were not distinct");
+        Assert.IsFalse(sessions["Client"].SetEquals(sessions["Server"]), $"{run.Label} client/server sessions were not distinct");
         foreach (var activity in all.Where(static activity => ReportedActivity.Text(activity, "Name") == "tools/call qyl_sensitive_probe"))
             RequireTags(run, activity, ("gen_ai.tool.name", "qyl_sensitive_probe"), ("gen_ai.operation.name", "execute_tool"), ("mcp.protocol.version", "2026-07-28"));
     }
@@ -93,6 +93,6 @@ public sealed class McpTests(TestContext testContext)
     private static void RequireTags(DemoRun run, JsonElement activity, params (string Key, string Value)[] expected)
     {
         foreach (var (key, value) in expected)
-            Assert.IsTrue(ReportedActivity.Tag(activity, key) == value, $"{run.Label} MCP activity tag mismatch for {key}: expected={value} activity={activity}");
+            Assert.AreEqual(value, ReportedActivity.Tag(activity, key), $"{run.Label} MCP activity tag mismatch for {key}: expected={value} activity={activity}");
     }
 }

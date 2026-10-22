@@ -195,8 +195,7 @@ static partial class ContractInvariants
 
     private static readonly HashSet<string> DbQueryTextAllowedPaths = new(StringComparer.Ordinal)
     {
-        "src/Qyl.Telemetry.AutoInstrumentation.EntityFrameworkCore/EntityFrameworkCore/EntityFrameworkCoreDiagnosticListener.cs",
-        "src/Qyl.Telemetry.AutoInstrumentation.SqlClient/SqlClient/SqlClientDiagnosticListener.cs",
+        "src/Qyl.Telemetry.AutoInstrumentation.DiagnosticListeners/Semantics/DatabaseSemantics.cs",
     };
 
     private const string QylAbiDelegationToken = "global::Qyl.Telemetry.AutoInstrumentation.GeneratedCode.QylIntercepted";

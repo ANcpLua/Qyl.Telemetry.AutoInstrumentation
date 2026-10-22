@@ -16,6 +16,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Qyl.Telemetry.Integration.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Include="buildTransitive\Qyl.Telemetry.AutoInstrumentation.SqlClient.targets"
           Pack="true"
           PackagePath="buildTransitive\" />

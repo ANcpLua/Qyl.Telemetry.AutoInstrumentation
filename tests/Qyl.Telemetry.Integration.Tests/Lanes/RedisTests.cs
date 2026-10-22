@@ -73,7 +73,7 @@ public sealed class RedisTests(TestContext testContext)
         foreach (var (label, operation) in RequiredProbes)
         {
             Assert.IsTrue(observed.ContainsKey(label), $"{run.Label} missing required probe {label}\n{run.Dump()}");
-            Assert.IsTrue(observed[label] == operation, $"{run.Label} probe {label} reported db.operation.name={observed[label]}, expected {operation}");
+            Assert.AreEqual(operation, observed[label], $"{run.Label} probe {label} reported db.operation.name={observed[label]}, expected {operation}");
         }
 
         // Each probe names its one span; the collector must hold it with the same db.operation.name.

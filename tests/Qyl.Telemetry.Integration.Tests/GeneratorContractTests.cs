@@ -140,7 +140,8 @@ internal static class Consumer
         var (_, compilation) = Run(WcfConsumer("string?", "[Obsolete(\"Use replacement\")]"),
             expectedCompilerDiagnostics: ["CS0618"]);
         var diagnostic = Assert.ContainsSingle(CompilerProblems(compilation));
-        Assert.AreEqual("Consumer.cs", diagnostic.Location.SourceTree?.FilePath);
+        Assert.IsNotNull(diagnostic.Location.SourceTree);
+        Assert.AreEqual("Consumer.cs", diagnostic.Location.SourceTree.FilePath);
         Assert.IsTrue(diagnostic.IsWarningAsError);
         AssertIntercepted(compilation, "Echo");
     }
@@ -211,14 +212,16 @@ internal static class Consumer
     }
 
     private Diagnostic[] CompilerProblems(Compilation compilation) =>
-        compilation.GetDiagnostics(testContext.CancellationToken)
-            .Where(static diagnostic => diagnostic.Severity is DiagnosticSeverity.Warning or DiagnosticSeverity.Error).ToArray();
+    [
+        .. compilation.GetDiagnostics(testContext.CancellationToken)
+            .Where(static diagnostic => diagnostic.Severity is DiagnosticSeverity.Warning or DiagnosticSeverity.Error)
+    ];
 
     private void AssertCompilerDiagnostics(Compilation compilation, string[] expected)
     {
         var diagnostics = CompilerProblems(compilation);
-        Assert.AreSequenceEqual(expected.Order(StringComparer.Ordinal).ToArray(),
-            diagnostics.Select(static diagnostic => diagnostic.Id).Order(StringComparer.Ordinal).ToArray(),
+        Assert.AreSequenceEqual([.. expected.Order(StringComparer.Ordinal)],
+            [.. diagnostics.Select(static diagnostic => diagnostic.Id).Order(StringComparer.Ordinal)],
             string.Join(Environment.NewLine, diagnostics.Select(static diagnostic => diagnostic.ToString())));
     }
 
@@ -243,8 +246,8 @@ internal static class Consumer
         var result = Assert.ContainsSingle(driver.GetRunResult().Results);
         var generatorProblems = result.Diagnostics
             .Where(static diagnostic => diagnostic.Severity is DiagnosticSeverity.Warning or DiagnosticSeverity.Error).ToArray();
-        Assert.AreSequenceEqual((expectedGeneratorDiagnostics ?? []).Order(StringComparer.Ordinal).ToArray(),
-            generatorProblems.Select(static diagnostic => diagnostic.Id).Order(StringComparer.Ordinal).ToArray(),
+        Assert.AreSequenceEqual([.. (expectedGeneratorDiagnostics ?? []).Order(StringComparer.Ordinal)],
+            [.. generatorProblems.Select(static diagnostic => diagnostic.Id).Order(StringComparer.Ordinal)],
             string.Join(Environment.NewLine, generatorProblems.Select(static diagnostic => diagnostic.ToString())));
         return (result, (CSharpCompilation)updated);
     }

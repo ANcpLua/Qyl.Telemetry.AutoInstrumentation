@@ -1,5 +1,6 @@
 using ANcpLua.Roslyn.Utilities;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 
 namespace Qyl.Telemetry.AutoInstrumentation.SourceGenerators;
 
@@ -1088,50 +1089,8 @@ public sealed partial class QylAutoInstrumentationGenerator
         => !symbol.IsValueType && symbol.NullableAnnotation is NullableAnnotation.Annotated ? "?" : string.Empty;
 
     private static string QuoteLiteral(string value)
-    {
-        var builder = new StringBuilder();
-        AppendStringLiteral(builder, value);
-        return builder.ToString();
-    }
+        => SymbolDisplay.FormatLiteral(value, quote: true);
 
     private static void AppendStringLiteral(StringBuilder builder, string value)
-    {
-        builder.Append('"');
-        foreach (var character in value)
-        {
-            switch (character)
-            {
-                case '"':
-                    builder.Append("\\\"");
-                    break;
-                case '\\':
-                    builder.Append("\\\\");
-                    break;
-                case '\b':
-                    builder.Append("\\b");
-                    break;
-                case '\f':
-                    builder.Append("\\f");
-                    break;
-                case '\n':
-                    builder.Append("\\n");
-                    break;
-                case '\r':
-                    builder.Append("\\r");
-                    break;
-                case '\t':
-                    builder.Append("\\t");
-                    break;
-                case < ' ':
-                    builder.Append("\\u");
-                    builder.Append(((int)character).ToString("x4", CultureInfo.InvariantCulture));
-                    break;
-                default:
-                    builder.Append(character);
-                    break;
-            }
-        }
-
-        builder.Append('"');
-    }
+        => builder.Append(QuoteLiteral(value));
 }

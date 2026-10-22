@@ -66,8 +66,7 @@ internal sealed class SqlClientDiagnosticListener : QylDiagnosticListenerSubscri
             command.Timestamp is { } afterTimestamp &&
             afterTimestamp > beforeTimestamp)
         {
-            duration = TimeSpan.FromTicks(
-                (long)((afterTimestamp - beforeTimestamp) * ((double)TimeSpan.TicksPerSecond / Stopwatch.Frequency)));
+            duration = Stopwatch.GetElapsedTime(beforeTimestamp, afterTimestamp);
         }
 
         if (QylDbActivityPolicy.HasCurrentActivityFor(command.Command))
@@ -80,21 +79,18 @@ internal sealed class SqlClientDiagnosticListener : QylDiagnosticListenerSubscri
             endTime - duration);
         activity?.SetEndTime(endTime.UtcDateTime);
 
-        SemanticTagWriter.Set(activity, QylAttributes.InstrumentationDomain, QylAttributes.InstrumentationDomainValues.DbSqlClient);
-        SemanticTagWriter.Set(activity, DbAttributes.SystemName, DbAttributes.SystemNameValues.MicrosoftSqlServer);
-        SemanticTagWriter.Set(activity, DbAttributes.Namespace, command.Namespace);
-        SemanticTagWriter.Set(activity, DbAttributes.OperationName, command.Operation);
-        SemanticTagWriter.Set(activity, DbAttributes.QuerySummary, command.QuerySummary);
-        if (DatabaseSemantics.ShouldWriteQueryText(
-                command.QueryText,
-                QylAutoInstrumentationOptions.Current.SqlClientSetDbStatementForText))
-        {
-            SemanticTagWriter.Set(activity, DbAttributes.QueryText, command.QueryText);
-        }
-
+        DatabaseSemantics.WriteCommand(
+            activity,
+            QylAttributes.InstrumentationDomainValues.DbSqlClient,
+            DbAttributes.SystemNameValues.MicrosoftSqlServer,
+            command.Namespace,
+            command.Operation,
+            command.QuerySummary,
+            command.QueryText,
+            QylAutoInstrumentationOptions.Current.SqlClientSetDbStatementForText,
+            command.ErrorType);
         SemanticTagWriter.Set(activity, ServerAttributes.Address, command.ServerAddress);
         SemanticTagWriter.Set(activity, ServerAttributes.Port, command.ServerPort);
-        ErrorStatusSemantics.SetError(activity, command.ErrorType);
     }
 
 }

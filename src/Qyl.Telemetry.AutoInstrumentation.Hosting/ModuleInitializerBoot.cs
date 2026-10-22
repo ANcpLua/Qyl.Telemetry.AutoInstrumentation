@@ -27,10 +27,5 @@ internal static class ModuleInitializerBoot
     [SuppressMessage("Usage", "CA2255",
         Justification = "Module-init IS the AOT-native attach mechanism this package ships; opt-in is the act of referencing Qyl.Telemetry.AutoInstrumentation.Hosting.")]
     public static void Boot()
-    {
-        if (Interlocked.Exchange(ref _booted, 1) == 1)
-            return;
-
-        QylInstrumentation.Activate();
-    }
+        => QylInstrumentation.BootOnce(ref _booted);
 }

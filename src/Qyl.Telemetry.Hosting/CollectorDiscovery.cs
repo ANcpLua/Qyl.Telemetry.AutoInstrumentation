@@ -64,21 +64,19 @@ internal static class CollectorDiscovery
         return null;
     }
 
-    private static bool TcpProbe(string host, int port)
+    internal static bool TcpProbe(string host, int port)
     {
         try
         {
             using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-            var result = socket.BeginConnect(host, port, null, null);
-            using var completed = result.AsyncWaitHandle;
-            if (!completed.WaitOne(TimeSpan.FromMilliseconds(100)) || !socket.Connected)
-                return false;
-            socket.EndConnect(result);
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+            socket.ConnectAsync(host, port, timeout.Token).AsTask().GetAwaiter().GetResult();
             return true;
         }
-        catch (SocketException)
+        catch (Exception exception) when (exception is SocketException or OperationCanceledException)
         {
-            // Connection refused / host unreachable / DNS failure — nothing is listening there.
+            // Connection refused / host unreachable / DNS failure / no answer within 100 ms — nothing
+            // is listening there. The cancellation aborts the pending connect.
             return false;
         }
     }

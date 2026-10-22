@@ -13,6 +13,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Qyl.Telemetry.Integration.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Include="buildTransitive\Qyl.Telemetry.AutoInstrumentation.EntityFrameworkCore.targets"
           Pack="true"
           PackagePath="buildTransitive\" />

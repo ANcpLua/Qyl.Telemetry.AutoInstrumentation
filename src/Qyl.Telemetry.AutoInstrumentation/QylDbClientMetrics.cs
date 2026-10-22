@@ -37,10 +37,6 @@ internal static class QylDbClientMetrics
         => OperationDuration.Enabled && ShouldRecord(instrumentationId);
 
     private static bool ShouldRecord(string instrumentationId)
-        => instrumentationId switch
-        {
-            QylAutoInstrumentationIds.SqlClient => QylAutoInstrumentationOptions.Current.IsInstrumentationEnabled(QylAutoInstrumentationSignal.Metrics, QylAutoInstrumentationIds.SqlClient),
-            QylAutoInstrumentationIds.Npgsql => QylAutoInstrumentationOptions.Current.IsInstrumentationEnabled(QylAutoInstrumentationSignal.Metrics, QylAutoInstrumentationIds.Npgsql),
-            _ => false,
-        };
+        => instrumentationId is QylAutoInstrumentationIds.SqlClient or QylAutoInstrumentationIds.Npgsql
+           && QylAutoInstrumentationOptions.Current.IsInstrumentationEnabled(QylAutoInstrumentationSignal.Metrics, instrumentationId);
 }

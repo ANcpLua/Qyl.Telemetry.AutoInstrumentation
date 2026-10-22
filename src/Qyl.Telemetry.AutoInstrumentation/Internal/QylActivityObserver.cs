@@ -23,7 +23,7 @@ internal static class QylActivityObserver
             return task!;
         }
 
-        return ObserveSlowAsync(task, activity);
+        return ObserveAsync(task, activity, completed: null);
     }
 
     private static async Task ObserveSlowAsync(Task task, Activity activity)
@@ -43,7 +43,9 @@ internal static class QylActivityObserver
         }
     }
 
-    private static async Task<T> ObserveSlowAsync<T>(Task<T> task, Activity activity)
+    /// <summary>Awaits <paramref name="task"/>, records its failure on <paramref name="activity"/>, then
+    /// runs <paramref name="completed"/> on either exit before the activity ends.</summary>
+    internal static async Task<T> ObserveAsync<T>(Task<T> task, Activity? activity, Action? completed)
     {
         try
         {
@@ -51,12 +53,14 @@ internal static class QylActivityObserver
         }
         catch (Exception exception)
         {
-            QylActivityStatus.RecordFailure(activity, exception);
+            if (activity is not null)
+                QylActivityStatus.RecordFailure(activity, exception);
             throw;
         }
         finally
         {
-            activity.Dispose();
+            completed?.Invoke();
+            activity?.Dispose();
         }
     }
 }

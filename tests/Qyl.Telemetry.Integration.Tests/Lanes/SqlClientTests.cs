@@ -39,8 +39,8 @@ public sealed class SqlClientTests(TestContext testContext)
         AotPublish.PrebuildGenerator();
         var output = Repo.PublishDirectory(lane.Project, "nativeaot-specialist");
         var outcome = AotPublish.Publish(lane.Project, output, strict: false, [property]);
-        Assert.IsTrue(outcome.ExitCode == 0, $"specialist-only NativeAOT SqlClient publish failed: exit={outcome.ExitCode}; {outcome.Diagnostics.FirstOrDefault() ?? outcome.Tail}");
-        Assert.IsTrue(outcome.Diagnostics.Count > 0, "specialist-only NativeAOT SqlClient publish is now warning-clean; promote its vendor boundary");
+        Assert.AreEqual(0, outcome.ExitCode, $"specialist-only NativeAOT SqlClient publish failed: exit={outcome.ExitCode}; {outcome.Diagnostics.FirstOrDefault() ?? outcome.Tail}");
+        Assert.IsNotEmpty(outcome.Diagnostics, "specialist-only NativeAOT SqlClient publish is now warning-clean; promote its vendor boundary");
         var (valid, detail) = AotPublish.ValidateWarningPolicy(lane.Demo, lane.Project, outcome.Diagnostics);
         Assert.IsTrue(valid, $"specialist-only NativeAOT SqlClient warning policy failed: {detail}");
         var executable = Path.Combine(output, Repo.ExecutableName(lane.Demo));
@@ -51,8 +51,8 @@ public sealed class SqlClientTests(TestContext testContext)
     private static void Verify(DemoContext lane, DemoRun run, string owner, int metrics, int port)
     {
         run.RequireSucceeded().RequireTokens("expected-sql-error=208");
-        Assert.IsTrue(run.StringField("RuntimeMode") == run.ExpectedRuntimeMode, $"{run.Label} runtime mode mismatch: expected={run.ExpectedRuntimeMode} actual={run.StringField("RuntimeMode")}");
-        Assert.IsTrue(run.StringField("TraceOwner") == owner, $"{run.Label} trace owner mismatch: expected={owner} actual={run.StringField("TraceOwner")}");
+        Assert.AreEqual(run.ExpectedRuntimeMode, run.StringField("RuntimeMode"), $"{run.Label} runtime mode mismatch: expected={run.ExpectedRuntimeMode} actual={run.StringField("RuntimeMode")}");
+        Assert.AreEqual(owner, run.StringField("TraceOwner"), $"{run.Label} trace owner mismatch: expected={owner} actual={run.StringField("TraceOwner")}");
         run.RequirePass();
         lane.Telemetry.Spans(run, run.RequireCount("Activities", 4, "SqlClient activities"), "SqlClient");
         var reported = run.RequireCount("Metrics", metrics, "SqlClient duration metrics");

@@ -40,7 +40,7 @@ internal static class Consumer
         CSharpGeneratorDriver.Create([new QylAutoInstrumentationGenerator().AsSourceGenerator()], parseOptions: ParseOptions)
             .RunGeneratorsAndUpdateCompilation(compilation, out var updated, out _, testContext.CancellationToken);
         using var image = new MemoryStream();
-        var emitted = updated.Emit(image);
+        var emitted = updated.Emit(image, cancellationToken: testContext.CancellationToken);
         Assert.IsTrue(emitted.Success, string.Join(Environment.NewLine, emitted.Diagnostics));
         var send = Assembly.Load(image.ToArray()).GetType("Consumer", throwOnError: true)!
             .GetMethod("Send", BindingFlags.Static | BindingFlags.NonPublic)!;
@@ -62,7 +62,7 @@ internal static class Consumer
     }
 
     /// <summary>An <see cref="IProducer{TKey,TValue}"/> that accepts every call.</summary>
-    public class AcceptingProducer : DispatchProxy
+    internal class AcceptingProducer : DispatchProxy
     {
         protected override object? Invoke(MethodInfo? targetMethod, object?[]? args) => null;
     }

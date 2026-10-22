@@ -61,12 +61,12 @@ public sealed class OracleMdaTests(TestContext testContext)
             "scalar-value=1",
             "nonquery-rows=-1",
             "expected-oraclemda-error=Oracle.ManagedDataAccess.Client.OracleException");
-        Assert.IsTrue(run.StringField("RuntimeMode") == run.ExpectedRuntimeMode, $"{run.Label} runtime mode mismatch: {run.StringField("RuntimeMode")}");
-        Assert.IsTrue(run.StringField("AddonMode") == mode, $"{run.Label} add-on mode mismatch: expected={mode} actual={run.StringField("AddonMode")}");
+        Assert.AreEqual(run.ExpectedRuntimeMode, run.StringField("RuntimeMode"), $"{run.Label} runtime mode mismatch: {run.StringField("RuntimeMode")}");
+        Assert.AreEqual(mode, run.StringField("AddonMode"), $"{run.Label} add-on mode mismatch: expected={mode} actual={run.StringField("AddonMode")}");
         run.RequirePass();
         var observed = run.Array("ObservedActivities").EnumerateArray().ToArray();
-        Assert.IsTrue(observed.Any(static activity => ReportedActivity.Text(activity, "Phase") == "background"
-            && ReportedActivity.Text(activity, "Source") == "System.Net.Http"),
+        Assert.Contains(static activity => ReportedActivity.Text(activity, "Phase") == "background"
+            && ReportedActivity.Text(activity, "Source") == "System.Net.Http", observed,
             $"{run.Label}: the real in-operation batch export did not exercise background HTTP activity attribution");
 
         var sets = ExpectedSpanSets(mode);
@@ -81,11 +81,11 @@ public sealed class OracleMdaTests(TestContext testContext)
         {
             Assert.IsTrue(roots.ContainsKey(phase), $"{run.Label} {phase} produced no root span");
             var children = activities.Count(activity => ReportedActivity.Text(activity, "Phase") == phase && ReportedActivity.Text(activity, "ParentSpanId") == roots[phase]);
-            Assert.IsTrue(children == 1, $"{run.Label} {phase} expected exactly 1 child of its root span, got {children}");
+            Assert.AreEqual(1, children, $"{run.Label} {phase} expected exactly 1 child of its root span, got {children}");
         }
 
         LaneChecks.ExcludedWithPrefix(run, "ExcludedSources", "Experimental.", requireSome: true);
-        var vocabulary = mode == ModeAddonEnriched ? DefaultVocabulary.Concat(EnrichedOnlyKeys).Order(StringComparer.Ordinal).ToArray() : DefaultVocabulary.Order(StringComparer.Ordinal).ToArray();
+        string[] vocabulary = mode == ModeAddonEnriched ? [.. DefaultVocabulary.Concat(EnrichedOnlyKeys).Order(StringComparer.Ordinal)] : [.. DefaultVocabulary.Order(StringComparer.Ordinal)];
         LaneChecks.ExactStrings(run, "TagVocabulary", vocabulary);
         lane.Telemetry.Spans(run, run.RequireCount("Activities", sets.Values.Sum(static spans => spans.Length), "ODP.NET activities"), "ODP.NET");
         return run;
@@ -95,14 +95,13 @@ public sealed class OracleMdaTests(TestContext testContext)
     /// them; turning its options on adds seven attribute keys and the connection spans, and takes none away.</summary>
     private static void VerifyAddonDelta(IReadOnlyDictionary<string, DemoRun> reports)
     {
-        static string[] Shape(DemoRun run) => run.Array("Activities").EnumerateArray()
+        static string[] Shape(DemoRun run) => [.. run.Array("Activities").EnumerateArray()
             .Select(static activity => string.Join("|",
                 ReportedActivity.Text(activity, "Phase"),
                 ReportedActivity.Text(activity, "Name"),
                 ReportedActivity.Text(activity, "Status"),
                 string.Join(",", ReportedActivity.TagKeys(activity).Order(StringComparer.Ordinal))))
-            .Order(StringComparer.Ordinal)
-            .ToArray();
+            .Order(StringComparer.Ordinal)];
 
         Assert.IsTrue(Shape(reports[ModeNone]).SequenceEqual(Shape(reports[ModeAddonDefault])), $"AddOracleDataProviderInstrumentation() with no options changed the spans:\nnone={string.Join("\n", Shape(reports[ModeNone]))}\naddon-default={string.Join("\n", Shape(reports[ModeAddonDefault]))}");
 
@@ -111,7 +110,7 @@ public sealed class OracleMdaTests(TestContext testContext)
         var added = enrichedKeys.Except(defaultKeys).Order(StringComparer.Ordinal).ToArray();
         Assert.IsTrue(added.SequenceEqual(EnrichedOnlyKeys.Order(StringComparer.Ordinal)), $"add-on attribute delta: expected [{string.Join(", ", EnrichedOnlyKeys)}], got [{string.Join(", ", added)}]");
         var removed = defaultKeys.Except(enrichedKeys).ToArray();
-        Assert.IsTrue(removed.Length == 0, $"the add-on removed attributes ODP.NET writes on its own: [{string.Join(", ", removed)}]");
+        Assert.IsEmpty(removed, $"the add-on removed attributes ODP.NET writes on its own: [{string.Join(", ", removed)}]");
 
         // The failing command: a bare status code without the add-on, an ORA description and an
         // exception event with RecordException on.

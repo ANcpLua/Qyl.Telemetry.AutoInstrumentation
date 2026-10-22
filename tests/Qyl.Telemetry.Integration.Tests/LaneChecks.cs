@@ -16,15 +16,15 @@ static class LaneChecks
         var observed = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         foreach (var entry in entries)
         {
-            Assert.IsTrue(entry.ValueKind is JsonValueKind.Object, $"{run.Label}: {field} entry is not an object: {entry}");
+            Assert.AreEqual(JsonValueKind.Object, entry.ValueKind, $"{run.Label}: {field} entry is not an object: {entry}");
             observed[ReportedActivity.Text(entry, key) ?? string.Empty] = entry;
         }
 
         Assert.IsTrue(observed.Keys.Order(StringComparer.Ordinal).SequenceEqual(expected.Keys.Order(StringComparer.Ordinal)), $"{run.Label}: {field} operations are [{string.Join(", ", observed.Keys.Order(StringComparer.Ordinal))}], expected [{string.Join(", ", expected.Keys.Order(StringComparer.Ordinal))}]");
-        Assert.IsTrue(entries.Length == expected.Count, $"{run.Label}: expected {expected.Count} {field} entries, got {entries.Length}");
+        Assert.HasCount(expected.Count, entries, $"{run.Label}: expected {expected.Count} {field} entries, got {entries.Length}");
         foreach (var (operation, spans) in expected)
         {
-            var want = sortExpected ? spans.Order(StringComparer.Ordinal).ToArray() : spans;
+            var want = sortExpected ? [.. spans.Order(StringComparer.Ordinal)] : spans;
             foreach (var side in new[] { "Expected", "Actual" })
             {
                 var actual = observed[operation].TryGetProperty(side, out var list) && list.ValueKind is JsonValueKind.Array ? DemoRun.Strings(list) : null;
@@ -54,12 +54,11 @@ static class LaneChecks
     /// <summary>A report's metric records as measurement series: the instrument under <paramref name="nameField"/>
     /// and the record's Tags, when it has any.</summary>
     public static IReadOnlyList<ReportedMetric> Metrics(JsonElement metrics, string nameField = "Name") =>
-        metrics.EnumerateArray()
+        [.. metrics.EnumerateArray()
             .Select(metric => new ReportedMetric(
                 ReportedActivity.Text(metric, nameField) ?? throw new AssertFailedException($"a reported metric carries no {nameField}: {metric}"),
                 ReportedActivity.TagKeys(metric).ToDictionary(static key => key, key => ReportedActivity.Tag(metric, key) ?? string.Empty, StringComparer.Ordinal),
-                ReportedActivity.Text(metric, "MeterName")))
-            .ToArray();
+                ReportedActivity.Text(metric, "MeterName")))];
 
     /// <summary>A synthetic span list for reports whose records are not activities but name one by id.</summary>
     public static JsonElement SpanReferences(IEnumerable<(string TraceId, string SpanId, IReadOnlyDictionary<string, string> Tags)> spans) =>

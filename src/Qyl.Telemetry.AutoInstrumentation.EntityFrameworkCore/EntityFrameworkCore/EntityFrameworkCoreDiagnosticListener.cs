@@ -2,7 +2,6 @@ using System.Diagnostics;
 using Qyl.Telemetry.AutoInstrumentation.DiagnosticListeners;
 using Qyl.Telemetry.AutoInstrumentation.DiagnosticListeners.Semantics;
 using Qyl.Telemetry.SemanticConventions.Incubating.Attributes.Qyl;
-using DbAttributes = Qyl.Telemetry.SemanticConventions.Attributes.Db.DbAttributes;
 
 namespace Qyl.Telemetry.AutoInstrumentation.EntityFrameworkCore;
 
@@ -39,18 +38,15 @@ internal sealed class EntityFrameworkCoreDiagnosticListener : QylDiagnosticListe
             command.StartTime);
         activity?.SetEndTime((command.StartTime + command.Duration).UtcDateTime);
 
-        SemanticTagWriter.Set(activity, QylAttributes.InstrumentationDomain, QylAttributes.InstrumentationDomainValues.DbEfCore);
-        SemanticTagWriter.Set(activity, DbAttributes.SystemName, command.DbSystem);
-        SemanticTagWriter.Set(activity, DbAttributes.Namespace, command.Namespace);
-        SemanticTagWriter.Set(activity, DbAttributes.OperationName, command.Operation);
-        SemanticTagWriter.Set(activity, DbAttributes.QuerySummary, command.QuerySummary);
-        if (DatabaseSemantics.ShouldWriteQueryText(
-                command.QueryText,
-                QylAutoInstrumentationOptions.Current.EntityFrameworkCoreSetDbStatementForText))
-        {
-            SemanticTagWriter.Set(activity, DbAttributes.QueryText, command.QueryText);
-        }
-
-        ErrorStatusSemantics.SetError(activity, command.ErrorType);
+        DatabaseSemantics.WriteCommand(
+            activity,
+            QylAttributes.InstrumentationDomainValues.DbEfCore,
+            command.DbSystem,
+            command.Namespace,
+            command.Operation,
+            command.QuerySummary,
+            command.QueryText,
+            QylAutoInstrumentationOptions.Current.EntityFrameworkCoreSetDbStatementForText,
+            command.ErrorType);
     }
 }

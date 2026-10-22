@@ -1,5 +1,7 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using Microsoft.Data.SqlClient;
+using Qyl.Telemetry.AutoInstrumentation.DiagnosticListeners.Semantics;
 using Qyl.Telemetry.AutoInstrumentation.Internal;
 
 namespace Qyl.Telemetry.AutoInstrumentation.SqlClient;
@@ -13,28 +15,27 @@ internal static class SqlClientPayloadReader
 
     public static bool TryRead(object? payload, bool isError, out SqlClientCommand command)
     {
-        if (!TryGetPayloadValue<SqlCommand>(payload, CommandKey, out var sqlCommand) ||
-            sqlCommand is null)
+        if (!TryGetPayload<SqlCommand>(payload, CommandKey, out var sqlCommand))
         {
             command = default;
             return false;
         }
 
-        _ = TryGetPayloadValue<Exception>(payload, ExceptionKey, out var exception);
+        _ = TryGetPayload<Exception>(payload, ExceptionKey, out var exception);
 
         var (operation, summary) = QylDbQuerySummary.Describe(sqlCommand.CommandType, sqlCommand.CommandText);
         var endpoint = ParseDataSource(sqlCommand.Connection?.DataSource);
 
         command = new SqlClientCommand(
             Command: sqlCommand,
-            Namespace: NormalizeEmpty(sqlCommand.Connection?.Database),
+            Namespace: DatabaseSemantics.NullIfWhiteSpace(sqlCommand.Connection?.Database),
             Operation: operation,
             QuerySummary: summary,
             QueryText: sqlCommand.CommandText,
             ServerAddress: endpoint.Address,
             ServerPort: endpoint.Port,
             ErrorType: isError ? GetErrorType(exception) : null,
-            Timestamp: TryGetPayloadStruct<long>(payload, TimestampKey, out var timestamp) ? timestamp : null);
+            Timestamp: TryGetPayload<long>(payload, TimestampKey, out var timestamp) ? timestamp : null);
 
         return true;
     }
@@ -42,15 +43,14 @@ internal static class SqlClientPayloadReader
     public static bool TryReadOperationStart(object? payload, out Guid operationId, out long timestamp)
     {
         timestamp = 0;
-        return TryGetPayloadStruct(payload, OperationIdKey, out operationId) &&
-               TryGetPayloadStruct(payload, TimestampKey, out timestamp);
+        return TryGetPayload(payload, OperationIdKey, out operationId) &&
+               TryGetPayload(payload, TimestampKey, out timestamp);
     }
 
     public static bool TryReadOperationId(object? payload, out Guid operationId) =>
-        TryGetPayloadStruct(payload, OperationIdKey, out operationId);
+        TryGetPayload(payload, OperationIdKey, out operationId);
 
-    private static bool TryGetPayloadStruct<T>(object? payload, string key, out T value)
-        where T : struct
+    private static bool TryGetPayload<T>(object? payload, string key, [MaybeNullWhen(false)] out T value)
     {
         if (payload is IEnumerable<KeyValuePair<string, object>> entries)
         {
@@ -69,26 +69,6 @@ internal static class SqlClientPayloadReader
         return false;
     }
 
-    private static bool TryGetPayloadValue<T>(object? payload, string key, out T? value)
-        where T : class
-    {
-        if (payload is IEnumerable<KeyValuePair<string, object>> entries)
-        {
-            foreach (var entry in entries)
-            {
-                if (StringComparer.Ordinal.Equals(entry.Key, key) &&
-                    entry.Value is T matched)
-                {
-                    value = matched;
-                    return true;
-                }
-            }
-        }
-
-        value = null;
-        return false;
-    }
-
     private static string? GetErrorType(Exception? exception)
         => exception switch
         {
@@ -99,7 +79,7 @@ internal static class SqlClientPayloadReader
 
     private static SqlServerEndpoint ParseDataSource(string? dataSource)
     {
-        if (NormalizeEmpty(dataSource) is not { } source)
+        if (DatabaseSemantics.NullIfWhiteSpace(dataSource) is not { } source)
             return default;
 
         source = StripProtocolPrefix(source);
@@ -109,7 +89,7 @@ internal static class SqlClientPayloadReader
         if (instanceSeparator > 0)
             source = source[..instanceSeparator];
 
-        return new SqlServerEndpoint(NormalizeEmpty(source), port);
+        return new SqlServerEndpoint(DatabaseSemantics.NullIfWhiteSpace(source), port);
     }
 
     private static string StripProtocolPrefix(string source)
@@ -138,9 +118,6 @@ internal static class SqlClientPayloadReader
         source = source[..separator];
         return port;
     }
-
-    private static string? NormalizeEmpty(string? value)
-        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }
 
 internal readonly record struct SqlClientCommand(

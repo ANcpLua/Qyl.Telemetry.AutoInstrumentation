@@ -41,17 +41,7 @@ internal sealed class QylCapturedNameMap
         if (entries.Count is 0)
             return Empty;
 
-        var lookupNames = new string[entries.Count];
-        var tagNames = new string[entries.Count];
-        var index = 0;
-        foreach (var entry in entries)
-        {
-            lookupNames[index] = entry.Key;
-            tagNames[index] = entry.Value;
-            index++;
-        }
-
-        return new QylCapturedNameMap(lookupNames, tagNames);
+        return new QylCapturedNameMap([.. entries.Keys], [.. entries.Values]);
     }
 
     private static string NormalizeName(string name)

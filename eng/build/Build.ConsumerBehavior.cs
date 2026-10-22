@@ -32,7 +32,14 @@ sealed partial class QylBuild
                         "FullyQualifiedName~HttpMethodSemanticsTests",
                         "FullyQualifiedName~KafkaPartitionTests",
                         "FullyQualifiedName~GenAiOptInDiagnosticTests",
-                        "FullyQualifiedName~DiagnosticListenerSubscriberTests")],
+                        "FullyQualifiedName~DiagnosticListenerSubscriberTests",
+                        "FullyQualifiedName~CollectorDiscoveryTests",
+                        "FullyQualifiedName~SessionBaggageTests",
+                        "FullyQualifiedName~DatabaseDiagnosticListenerTests",
+                        "FullyQualifiedName~DbCommandNativeSourceReceiverTests",
+                        "FullyQualifiedName~DbCommandObservationTests",
+                        "FullyQualifiedName~InstrumentationBootTests",
+                        "FullyQualifiedName~HostConfigurationTests")],
                 Repo.Root, echo: true);
             Log.Information("consumer-behavior-gate-ok");
         });

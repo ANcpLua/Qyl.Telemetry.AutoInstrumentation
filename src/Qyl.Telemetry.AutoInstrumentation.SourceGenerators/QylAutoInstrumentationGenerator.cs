@@ -272,13 +272,8 @@ public sealed partial class QylAutoInstrumentationGenerator : IIncrementalGenera
         var namespaceName = containingNamespace.ToDisplayString();
         foreach (var declared in intercept.NativeSourceReceivers)
         {
-            if (string.Equals(namespaceName, declared, StringComparison.Ordinal) ||
-                (namespaceName.Length > declared.Length &&
-                 namespaceName.StartsWithOrdinal(declared) &&
-                 namespaceName[declared.Length] is '.'))
-            {
+            if (NamespaceMatches(namespaceName, declared))
                 return true;
-            }
         }
 
         return false;

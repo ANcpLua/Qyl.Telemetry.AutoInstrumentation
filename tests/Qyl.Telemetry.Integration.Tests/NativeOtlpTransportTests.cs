@@ -61,7 +61,8 @@ public sealed class NativeOtlpTransportTests(TestContext testContext)
             cancellationToken: testContext.CancellationToken);
 
         var span = Assert.ContainsSingle(result.Spans.Where(static span => span.Name == "checkout.operation"));
-        Assert.AreEqual(sourceName, span.Scope?.Name);
+        Assert.IsNotNull(span.Scope);
+        Assert.AreEqual(sourceName, span.Scope.Name);
         Assert.AreEqual(9_007_199_254_740_993L, span.GetInt64("checkout.sequence"));
         Assert.IsFalse(span.GetBoolean("checkout.accepted"));
         var log = Assert.ContainsSingle(result.Logs.Where(static log => log.EventName == "WorkCompleted"));

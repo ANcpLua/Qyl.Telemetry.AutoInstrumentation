@@ -27,7 +27,7 @@ public sealed class GrpcClientTests(TestContext testContext)
         run.RequireSucceeded().RequireTokens("expected-failure=Unavailable").RequireReportPassed();
         var activities = run.Array("Activities");
         var grpc = activities.EnumerateArray().Count(static activity => ReportedActivity.Tag(activity, "qyl.instrumentation.domain") == "rpc.grpc");
-        Assert.IsTrue(grpc == 2, $"{run.Label} expected exactly 2 gRPC client activities, got {grpc}:\n{activities}");
+        Assert.AreEqual(2, grpc, $"{run.Label} expected exactly 2 gRPC client activities, got {grpc}:\n{activities}");
         lane.Telemetry.Spans(run, activities, "gRPC client");
     }
 }

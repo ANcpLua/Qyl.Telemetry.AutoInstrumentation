@@ -142,7 +142,7 @@ internal sealed class QylAutoInstrumentationOptions
             EnvironmentOptions.ReadList(HttpClientResponseHeadersVariable),
             EnvironmentOptions.ReadList(GrpcRequestMetadataVariable),
             EnvironmentOptions.ReadList(GrpcResponseMetadataVariable),
-            EnvironmentOptions.ReadCaseSensitiveList(MetricsAdditionalSourcesVariable),
+            EnvironmentOptions.ReadList(MetricsAdditionalSourcesVariable, lowerCase: false),
             EnvironmentOptions.ReadBoolean(AspNetCoreUrlQueryRedactionDisabledVariable) ?? false,
             EnvironmentOptions.ReadBoolean(HttpClientUrlQueryRedactionDisabledVariable) ?? false);
     }
@@ -225,59 +225,21 @@ internal sealed class QylAutoInstrumentationOptions
             return bool.TryParse(value, out var parsed) ? parsed : null;
         }
 
-        internal static string[] ReadList(string variable)
+        internal static string[] ReadList(string variable, bool lowerCase = true)
         {
             var value = Environment.GetEnvironmentVariable(variable);
             if (string.IsNullOrWhiteSpace(value))
                 return [];
 
-            return
-            [
-                .. value
-                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                    .Where(static item => item.Length > 0)
-                    .Select(static item => item.ToLower(CultureInfo.InvariantCulture))
-                    .Distinct(StringComparer.Ordinal)
-            ];
-        }
+            var items = value
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(static item => item.Length > 0);
+            if (lowerCase)
+                items = items.Select(static item => item.ToLower(CultureInfo.InvariantCulture));
 
-        internal static string[] ReadCaseSensitiveList(string variable)
-        {
-            var value = Environment.GetEnvironmentVariable(variable);
-            if (string.IsNullOrWhiteSpace(value))
-                return [];
-
-            return
-            [
-                .. value
-                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                    .Where(static item => item.Length > 0)
-                    .Distinct(StringComparer.Ordinal)
-            ];
+            return [.. items.Distinct(StringComparer.Ordinal)];
         }
     }
 
-    private readonly struct InstrumentationLookupKey : IEquatable<InstrumentationLookupKey>
-    {
-        private readonly QylAutoInstrumentationSignal _signal;
-        private readonly string _instrumentationId;
-
-        internal InstrumentationLookupKey(QylAutoInstrumentationSignal signal, string instrumentationId)
-        {
-            _signal = signal;
-            _instrumentationId = instrumentationId;
-        }
-
-        public bool Equals(InstrumentationLookupKey other)
-            => _signal == other._signal &&
-               string.Equals(_instrumentationId, other._instrumentationId, StringComparison.Ordinal);
-
-        public override bool Equals(object? obj)
-            => obj is InstrumentationLookupKey other && Equals(other);
-
-        public override int GetHashCode()
-            => HashCode.Combine(
-                _signal,
-                _instrumentationId is null ? 0 : StringComparer.Ordinal.GetHashCode(_instrumentationId));
-    }
+    private readonly record struct InstrumentationLookupKey(QylAutoInstrumentationSignal Signal, string InstrumentationId);
 }

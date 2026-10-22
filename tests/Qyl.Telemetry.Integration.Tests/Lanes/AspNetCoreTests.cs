@@ -45,25 +45,25 @@ public sealed class AspNetCoreTests(TestContext testContext)
         run.RequireSucceeded().RequireReportPassed();
         var activities = run.RequireAtLeast("Activities", ExpectedServerSpans, "ASP.NET Core activities");
         var servers = activities.EnumerateArray().Where(static activity => ReportedActivity.Text(activity, "Kind") == "Server").ToArray();
-        Assert.IsTrue(servers.Length == ExpectedServerSpans, $"{run.Label} exported {servers.Length} server spans for {ExpectedServerSpans} requests — a second one means a qyl-made server span came back:\n{string.Join("\n", servers)}");
+        Assert.HasCount(ExpectedServerSpans, servers, $"{run.Label} exported {servers.Length} server spans for {ExpectedServerSpans} requests — a second one means a qyl-made server span came back:\n{string.Join("\n", servers)}");
 
         foreach (var span in servers)
         {
             var name = ReportedActivity.Text(span, "Name");
-            Assert.IsTrue(ReportedActivity.Text(span, "Source") == AspNetCoreSource,
+            Assert.AreEqual(AspNetCoreSource, ReportedActivity.Text(span, "Source"),
                 $"{run.Label} server span is not ASP.NET Core's own: source={ReportedActivity.Text(span, "Source")} name={name}");
             Assert.IsTrue(span.TryGetProperty("Tags", out var tags) && tags.ValueKind is JsonValueKind.Object, $"{run.Label} server span carries no tags: {span}");
 
             // http.route is the one conditionally required attribute: a request that resolved no
             // endpoint has no template to carry. The name still has to come from qyl.
             var route = ReportedActivity.Tag(span, RouteKey);
-            var expected = string.IsNullOrEmpty(route) ? required.Where(static key => key != RouteKey).ToArray() : required;
+            var expected = string.IsNullOrEmpty(route) ? [.. required.Where(static key => key != RouteKey)] : required;
             var missing = expected.Where(key => !ReportedActivity.HasTag(span, key)).ToArray();
-            Assert.IsTrue(missing.Length == 0, $"{run.Label} server span '{name}' is missing [{string.Join(", ", missing)}]");
+            Assert.IsEmpty(missing, $"{run.Label} server span '{name}' is missing [{string.Join(", ", missing)}]");
 
             var method = ReportedActivity.Tag(span, MethodKey);
             var expectedName = string.IsNullOrEmpty(route) ? method : $"{method} {route}";
-            Assert.IsTrue(name == expectedName, $"{run.Label} server span is named '{name}', not after its route ('{expectedName}')");
+            Assert.AreEqual(expectedName, name, $"{run.Label} server span is named '{name}', not after its route ('{expectedName}')");
         }
 
         lane.Telemetry.Spans(run, activities, "ASP.NET Core");
@@ -79,7 +79,7 @@ public sealed class AspNetCoreTests(TestContext testContext)
             foreach (var signal in entry.GetValueOrDefault("conformance_signals") as List<object?> ?? [])
             {
                 if (signal is OrderedDictionary<string, object?> conformance && conformance.GetValueOrDefault("name") as string == ConformanceSignal)
-                    return ((List<object?>)conformance["required_attributes"]!).Cast<string>().ToArray();
+                    return [.. ((List<object?>)conformance["required_attributes"]!).Cast<string>()];
             }
         }
 

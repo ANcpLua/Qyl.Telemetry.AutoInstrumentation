@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Diagnostics;
 using SessionAttributes = Qyl.Telemetry.SemanticConventions.Incubating.Attributes.Session.SessionAttributes;
 
@@ -27,6 +28,9 @@ internal static class QylSessionBaggage
     /// <summary>The longest <c>session.id</c> admitted from the wire.</summary>
     private const int MaxSessionIdLength = 128;
 
+    private static readonly SearchValues<char> Unreserved =
+        SearchValues.Create("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~-");
+
     internal static void Stamp(Activity activity)
     {
         if (activity.GetTagItem(SessionAttributes.Id) is not null)
@@ -54,14 +58,6 @@ internal static class QylSessionBaggage
         if (candidate is not { Length: > 0 and <= MaxSessionIdLength })
             return false;
 
-        var onlyDots = true;
-        foreach (var character in candidate)
-        {
-            if (character is not ((>= 'A' and <= 'Z') or (>= 'a' and <= 'z') or (>= '0' and <= '9') or '.' or '_' or '~' or '-'))
-                return false;
-            onlyDots &= character is '.';
-        }
-
-        return !onlyDots;
+        return !candidate.AsSpan().ContainsAnyExcept(Unreserved) && candidate.AsSpan().ContainsAnyExcept('.');
     }
 }

@@ -17,6 +17,8 @@
     <PackageReference Include="Confluent.Kafka" />
     <PackageReference Include="System.ServiceModel.Primitives" />
     <ProjectReference Include="../../src/Qyl.Telemetry.Hosting/Qyl.Telemetry.Hosting.csproj" />
+    <ProjectReference Include="../../src/Qyl.Telemetry.AutoInstrumentation.EntityFrameworkCore/Qyl.Telemetry.AutoInstrumentation.EntityFrameworkCore.csproj" />
+    <ProjectReference Include="../../src/Qyl.Telemetry.AutoInstrumentation.SqlClient/Qyl.Telemetry.AutoInstrumentation.SqlClient.csproj" />
     <PackageReference Include="Qyl.Telemetry.Testing" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="OpenTelemetry.Exporter.InMemory" />

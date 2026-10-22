@@ -18,6 +18,20 @@ internal static class QylInstrumentation
     private static int _activated;
 
     /// <summary>
+    /// The module-initializer boot sequence each package shares: the first call through
+    /// <paramref name="booted"/> activates qyl and runs the package's <paramref name="subscribe"/>;
+    /// later calls do nothing.
+    /// </summary>
+    internal static void BootOnce(ref int booted, Action? subscribe = null)
+    {
+        if (Interlocked.Exchange(ref booted, 1) == 1)
+            return;
+
+        Activate();
+        subscribe?.Invoke();
+    }
+
+    /// <summary>
     /// Applies the process-wide runtime switches qyl instrumentation depends on.
     /// </summary>
     public static void Activate()

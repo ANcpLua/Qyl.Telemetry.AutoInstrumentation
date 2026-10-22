@@ -33,8 +33,8 @@ sealed class DemoRun(string label, LaneRuntime runtime, ProcessResult process, T
     /// <summary>Exit code 0 and nothing on stderr.</summary>
     public DemoRun RequireSucceeded()
     {
-        Assert.IsTrue(Process.ExitCode == 0, $"{Label} failed\nexit={Process.ExitCode}\nstdout={Process.Stdout}\nstderr={Process.Stderr}");
-        Assert.IsTrue(Process.Stderr.Length == 0, $"{Label} wrote stderr:\n{Process.Stderr}");
+        Assert.AreEqual(0, Process.ExitCode, $"{Label} failed\nexit={Process.ExitCode}\nstdout={Process.Stdout}\nstderr={Process.Stderr}");
+        Assert.AreEqual(0, Process.Stderr.Length, $"{Label} wrote stderr:\n{Process.Stderr}");
         return this;
     }
 
@@ -48,7 +48,7 @@ sealed class DemoRun(string label, LaneRuntime runtime, ProcessResult process, T
     public DemoRun RequireTokenCount(string token, int count)
     {
         var actual = Count(Process.Stdout, token);
-        Assert.IsTrue(actual == count, $"{Label} expected exactly {count} '{token}' tokens, found {actual}\nstdout={Process.Stdout}");
+        Assert.AreEqual(count, actual, $"{Label} expected exactly {count} '{token}' tokens, found {actual}\nstdout={Process.Stdout}");
         return this;
     }
 
@@ -60,18 +60,26 @@ sealed class DemoRun(string label, LaneRuntime runtime, ProcessResult process, T
             if (_report is { } cached)
                 return cached;
             var start = Process.Stdout.IndexOf("{\n", StringComparison.Ordinal);
-            Assert.IsTrue(start >= 0, $"{Label} did not emit a JSON report\nstdout={Process.Stdout}");
-            try
-            {
-                using var document = JsonDocument.Parse(Process.Stdout[start..]);
-                Assert.IsTrue(document.RootElement.ValueKind is JsonValueKind.Object, $"{Label} report must be a JSON object");
-                _report = document.RootElement.Clone();
-                return _report.Value;
-            }
-            catch (JsonException exception)
-            {
-                throw new AssertFailedException($"{Label} emitted an invalid JSON report: {exception.Message}\nstdout={Process.Stdout}");
-            }
+            Assert.IsGreaterThanOrEqualTo(0, start, $"{Label} did not emit a JSON report\nstdout={Process.Stdout}");
+            using var document = ParseJson(Process.Stdout[start..], out var parseError);
+            Assert.IsNotNull(document, $"{Label} emitted an invalid JSON report: {parseError}\nstdout={Process.Stdout}");
+            Assert.AreEqual(JsonValueKind.Object, document.RootElement.ValueKind, $"{Label} report must be a JSON object");
+            _report = document.RootElement.Clone();
+            return _report.Value;
+        }
+    }
+
+    private static JsonDocument? ParseJson(string json, out string? error)
+    {
+        try
+        {
+            error = null;
+            return JsonDocument.Parse(json);
+        }
+        catch (JsonException exception)
+        {
+            error = exception.Message;
+            return null;
         }
     }
 
@@ -80,7 +88,7 @@ sealed class DemoRun(string label, LaneRuntime runtime, ProcessResult process, T
     /// <summary>RuntimeMode matches the runtime this run used, and the demo's own verdict is Pass.</summary>
     public DemoRun RequireReportPassed()
     {
-        Assert.IsTrue(StringField("RuntimeMode") == ExpectedRuntimeMode, $"{Label} runtime mode mismatch: expected={ExpectedRuntimeMode} actual={StringField("RuntimeMode")}");
+        Assert.AreEqual(ExpectedRuntimeMode, StringField("RuntimeMode"), $"{Label} runtime mode mismatch: expected={ExpectedRuntimeMode} actual={StringField("RuntimeMode")}");
         return RequirePass();
     }
 
@@ -106,33 +114,33 @@ sealed class DemoRun(string label, LaneRuntime runtime, ProcessResult process, T
 
     public DemoRun RequireBool(string field, bool expected)
     {
-        Assert.IsTrue(BoolField(field) == expected, $"{Label} expected {field}={expected}, got {BoolField(field)?.ToString() ?? "absent"}:\n{Dump()}");
+        Assert.AreEqual(expected, BoolField(field), $"{Label} expected {field}={expected}, got {BoolField(field)?.ToString() ?? "absent"}:\n{Dump()}");
         return this;
     }
 
     public JsonElement Array(string field)
     {
         var value = Field(field);
-        Assert.IsTrue(value.ValueKind is JsonValueKind.Array, $"{Label} report {field} must be an array: {value}");
+        Assert.AreEqual(JsonValueKind.Array, value.ValueKind, $"{Label} report {field} must be an array: {value}");
         return value;
     }
 
     public JsonElement RequireCount(string field, int expected, string what)
     {
         var array = Array(field);
-        Assert.IsTrue(array.GetArrayLength() == expected, $"{Label} expected exactly {expected} {what}, got {array.GetArrayLength()}:\n{array}");
+        Assert.AreEqual(expected, array.GetArrayLength(), $"{Label} expected exactly {expected} {what}, got {array.GetArrayLength()}:\n{array}");
         return array;
     }
 
     public JsonElement RequireAtLeast(string field, int expected, string what)
     {
         var array = Array(field);
-        Assert.IsTrue(array.GetArrayLength() >= expected, $"{Label} expected at least {expected} {what}, got {array.GetArrayLength()}:\n{array}");
+        Assert.IsGreaterThanOrEqualTo(expected, array.GetArrayLength(), $"{Label} expected at least {expected} {what}, got {array.GetArrayLength()}:\n{array}");
         return array;
     }
 
     public static IReadOnlyList<string?> Strings(JsonElement array) =>
-        array.EnumerateArray().Select(static item => item.ValueKind is JsonValueKind.String ? item.GetString() : null).ToArray();
+        [.. array.EnumerateArray().Select(static item => item.ValueKind is JsonValueKind.String ? item.GetString() : null)];
 
     private static int Count(string text, string token)
     {

@@ -61,4 +61,45 @@ internal static class Consumer
         Assert.IsFalse(intercepted["Describe"], "A helper that is not a contract operation was given an RPC client span.");
         Assert.IsFalse(intercepted["ToString"], "ToString was given an RPC client span.");
     }
+
+    [TestMethod]
+    public void WcfClient_OperationNameWithLineSeparator_GeneratesCompilableInterceptor()
+    {
+        var tree = CSharpSyntaxTree.ParseText("""
+using System.ServiceModel;
+
+[ServiceContract]
+internal interface IOrderService
+{
+    [OperationContract(Name = "Get\u2028Order")]
+    string GetOrder(int id);
+}
+
+internal sealed class OrdersClient : ClientBase<IOrderService>, IOrderService
+{
+    public string GetOrder(int id) => Channel.GetOrder(id);
+}
+
+internal static class Consumer
+{
+    internal static string Run(OrdersClient client) => client.GetOrder(1);
+}
+""", ParseOptions, "Consumer.cs", cancellationToken: testContext.CancellationToken);
+        var references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator)
+            .Append(typeof(QylGeneratedCodeAbi).Assembly.Location)
+            .Append(typeof(System.ServiceModel.ClientBase<>).Assembly.Location)
+            .Distinct(StringComparer.Ordinal)
+            .Select(static path => MetadataReference.CreateFromFile(path));
+        var compilation = CSharpCompilation.Create("WcfConsumer", [tree], references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable));
+        CSharpGeneratorDriver.Create([new QylAutoInstrumentationGenerator().AsSourceGenerator()], parseOptions: ParseOptions)
+            .RunGeneratorsAndUpdateCompilation(compilation, out var updated, out _, testContext.CancellationToken);
+
+        var invocation = tree.GetRoot(testContext.CancellationToken).DescendantNodes().OfType<InvocationExpressionSyntax>()
+            .Single(static invocation => invocation.Expression is MemberAccessExpressionSyntax { Name.Identifier.ValueText: "GetOrder", Expression: IdentifierNameSyntax { Identifier.ValueText: "client" } });
+        Assert.IsNotNull(updated.GetSemanticModel(tree).GetInterceptorMethod(invocation, testContext.CancellationToken),
+            "The contract operation is the RPC and must be intercepted.");
+        Assert.IsEmpty(updated.GetDiagnostics(testContext.CancellationToken).Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error),
+            "The operation name reached the generated source as an unescaped line separator.");
+    }
 }

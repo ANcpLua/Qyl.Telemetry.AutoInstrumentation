@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Qyl.Telemetry.AutoInstrumentation.DiagnosticListeners.Semantics;
 using Qyl.Telemetry.AutoInstrumentation.Internal;
 using DbAttributes = Qyl.Telemetry.SemanticConventions.Attributes.Db.DbAttributes;
 using DbIncubatingAttributes = Qyl.Telemetry.SemanticConventions.Incubating.Attributes.Db.DbAttributes;
@@ -18,7 +19,7 @@ internal static class EntityFrameworkCorePayloadReader
         var (operation, summary) = QylDbQuerySummary.Describe(commandEvent.Command.CommandType, commandEvent.Command.CommandText);
         command = new EntityFrameworkCoreCommand(
             DbSystem: MapProviderName(commandEvent.Context?.Database.ProviderName),
-            Namespace: NormalizeEmpty(commandEvent.Command.Connection?.Database),
+            Namespace: DatabaseSemantics.NullIfWhiteSpace(commandEvent.Command.Connection?.Database),
             Operation: operation,
             QuerySummary: summary,
             QueryText: commandEvent.Command.CommandText,
@@ -44,9 +45,6 @@ internal static class EntityFrameworkCorePayloadReader
             "IBM.EntityFrameworkCore" => DbIncubatingAttributes.SystemNameValues.IbmDb2,
             _ => DbIncubatingAttributes.SystemNameValues.OtherSql,
         };
-
-    private static string? NormalizeEmpty(string? value)
-        => string.IsNullOrWhiteSpace(value) ? null : value;
 }
 
 internal readonly record struct EntityFrameworkCoreCommand(

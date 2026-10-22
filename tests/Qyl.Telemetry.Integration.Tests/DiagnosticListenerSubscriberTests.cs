@@ -17,13 +17,13 @@ public sealed class DiagnosticListenerSubscriberTests
         subscriber.Subscribe();
         first.Write("before", null);
         second.Write("before", null);
-        Assert.AreSequenceEqual(["before", "before"], subscriber.Events.ToArray());
+        Assert.AreSequenceEqual(["before", "before"], [.. subscriber.Events]);
 
         subscriber.Dispose();
         first.Write("after", null);
         second.Write("after", null);
 
-        Assert.AreSequenceEqual(["before", "before"], subscriber.Events.ToArray(),
+        Assert.AreSequenceEqual(["before", "before"], [.. subscriber.Events],
             "Events still arrive after Dispose.");
     }
 
