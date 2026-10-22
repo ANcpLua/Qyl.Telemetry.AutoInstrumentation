@@ -1,4 +1,23 @@
 <Solution>
+  <Folder Name="/Solution Items/">
+    <File Path=".gitattributes" />
+    <File Path=".gitignore" />
+    <File Path=".gitmodules" />
+    <File Path="Makefile" />
+    <File Path="release.sh" />
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path="global.json" />
+    <File Path="mise.toml" />
+    <File Path="nuget.config" />
+    <File Path="renovate.json" />
+    <File Path="LICENSE" />
+    <File Path="AGENTS.md" />
+    <File Path="README.md" />
+    <File Path="SKILL.md" />
+    <File Path="CHANGELOG.md" />
+    <File Path="CHANGELOG.archive.md" />
+  </Folder>
   <Project Path="eng/build/build.csproj" />
   <Project Path="eng/fixtures/Qyl.Telemetry.TestFixtures/Qyl.Telemetry.TestFixtures.csproj" />
   <Project Path="benchmarks/Qyl.Telemetry.AutoInstrumentation.Benchmarks/Qyl.Telemetry.AutoInstrumentation.Benchmarks.csproj" />
