@@ -69,5 +69,7 @@ internal static class QylDemoOtlp
         => endpoint.Port == GrpcPort ? OtlpExportProtocol.Grpc : OtlpExportProtocol.HttpProtobuf;
 
     private static Uri SignalEndpoint(Uri endpoint, string signalPath)
-        => endpoint.Port == GrpcPort ? endpoint : new Uri(endpoint, signalPath);
+        => endpoint.Port == GrpcPort
+            ? endpoint
+            : new UriBuilder(endpoint) { Path = endpoint.AbsolutePath.TrimEnd('/') + signalPath }.Uri;
 }

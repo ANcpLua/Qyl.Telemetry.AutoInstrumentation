@@ -248,6 +248,6 @@ public static class QylHostApplicationBuilderExtensions
         exporter.Protocol = destination.Protocol;
         exporter.Endpoint = destination.Protocol == OtlpExportProtocol.Grpc
             ? destination.Endpoint
-            : new Uri(destination.Endpoint, signalPath);
+            : new UriBuilder(destination.Endpoint) { Path = destination.Endpoint.AbsolutePath.TrimEnd('/') + signalPath }.Uri;
     }
 }
