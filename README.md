@@ -301,12 +301,13 @@ Fallout targets in `eng/build`; `make <target>` wraps `./eng/build.sh <Target>`,
   `CHANGELOG.md` entry is `<Version>`.
 - `Demos`: thirty demo applications under `demos/`, run as native MSTest cases in
   `tests/Qyl.Telemetry.Integration.Tests/Lanes/<Name>Tests.cs`, NativeAOT where the integration
-  supports it. Each run owns a `Qyl.Telemetry.Testing` OTLP receiver, passed as `QYL_ENDPOINT`;
+  supports it. Each run owns an `OtlpReceiver` from `Qyl.Telemetry.Tests`, passed as `QYL_ENDPOINT`;
   the case compares the application's report with independent expectations and the complete
   capture. Captures and registry reports stay under `artifacts/integration-tests`. Ten lanes need a
   [testbed](#testbed-on-railway) service. Run by hand, a demo exports through `AddQyl()`'s
   discovery to a running `qyl up`.
-- The HTTP-header and gRPC-metadata fixtures use `Qyl.Telemetry.Tests.Capture` from the submodule
+- The integration tests use the support library `Qyl.Telemetry.Tests` and the HTTP-header and
+  gRPC-metadata fixtures use `Qyl.Telemetry.Tests.Capture`, both from the submodule
   `eng/dependencies/Qyl.Telemetry.Tests`; `./eng/build.sh` initializes it, direct `dotnet` commands
   need `git submodule update --init -- eng/dependencies/Qyl.Telemetry.Tests`.
 - `OtlpEvidence` decodes a package consumer's export with the official protobuf messages and checks
