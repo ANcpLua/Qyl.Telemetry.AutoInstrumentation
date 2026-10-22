@@ -47,23 +47,32 @@ builder.Services.AddMassTransit(configure => configure.UsingRabbitMq((_, rabbit)
     });
 }));
 
-using var host = builder.Build();
-await host.StartAsync();
+var host = builder.Build();
 
+// Every broker step shares one explicit deadline, enforced from outside the steps (they run on the
+// thread pool, so even a step that blocks synchronously cannot hold the wait) as well as passed into them: a broker that answers TCP but never completes the AMQP handshake, or stalls a publish,
+// fails the run with a clear message instead of hanging it. A stuck host is left undisposed, since
+// disposing it would wait on the same broker.
+var brokerTimeout = TimeSpan.FromSeconds(90);
+using var brokerDeadline = new CancellationTokenSource(brokerTimeout, TimeProvider.System);
 var bus = host.Services.GetRequiredService<IBusControl>();
-await WaitForBusAsync(bus);
-
-await bus.Publish(new ProbeEvent("alpha"));
-Console.WriteLine("published=alpha");
-
-var sendEndpoint = await bus.GetSendEndpoint(new Uri("queue:" + MassTransitReport.SendDestination));
-await sendEndpoint.Send(new ProbeCommand("beta"));
-Console.WriteLine("sent=beta");
-
-await bus.StopAsync();
+Exception? lastConnectFailure = null;
+var brokerStep = "host start";
+try
+{
+    await Task.Run(() => RunBrokerStepsAsync(brokerDeadline.Token)).WaitAsync(brokerTimeout, TimeProvider.System);
+}
+catch (Exception exception) when (exception is TimeoutException || brokerDeadline.IsCancellationRequested)
+{
+    Console.Error.WriteLine(
+        $"RabbitMQ did not complete the MassTransit start, publish, send and stop within {brokerTimeout.TotalSeconds:0}s; stuck at {brokerStep}" +
+        (lastConnectFailure is null ? "." : $"; last connect failure: {lastConnectFailure.GetType().Name}: {lastConnectFailure.Message}"));
+    return 3;
+}
 
 host.Services.GetRequiredService<TracerProvider>().ForceFlush(5_000);
 await host.StopAsync();
+host.Dispose();
 
 var report = MassTransitReport.Create(
     RuntimeFeature.IsDynamicCodeSupported ? "dynamic-code-supported" : "nativeaot",
@@ -74,26 +83,46 @@ Console.WriteLine(json);
 
 return report.Pass ? 0 : 1;
 
-static async Task WaitForBusAsync(IBusControl bus)
+async Task RunBrokerStepsAsync(CancellationToken deadline)
 {
-    Exception? lastException = null;
+    await host.StartAsync(deadline);
+    brokerStep = "bus start";
+    await WaitForBusAsync(deadline);
 
-    for (var attempt = 0; attempt < 60; attempt++)
+    brokerStep = "publish";
+    await bus.Publish(new ProbeEvent("alpha"), deadline);
+    Console.WriteLine("published=alpha");
+
+    brokerStep = "send";
+    var sendEndpoint = await bus.GetSendEndpoint(new Uri("queue:" + MassTransitReport.SendDestination));
+    await sendEndpoint.Send(new ProbeCommand("beta"), deadline);
+    Console.WriteLine("sent=beta");
+
+    brokerStep = "bus stop";
+    await bus.StopAsync(deadline);
+}
+
+// Retries the bus start, five seconds an attempt, until it connects or the deadline cancels, and
+// keeps the last failure for the timeout message.
+async Task WaitForBusAsync(CancellationToken deadline)
+{
+    while (true)
     {
+        using var attemptTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5), TimeProvider.System);
+        using var attempt = CancellationTokenSource.CreateLinkedTokenSource(deadline, attemptTimeout.Token);
         try
         {
-            await bus.StartAsync(TimeSpan.FromSeconds(5));
+            await bus.StartAsync(attempt.Token);
             return;
         }
-        catch (Exception exception) when (exception is RabbitMqConnectionException or OperationCanceledException or TimeoutException)
+        catch (Exception exception) when (!deadline.IsCancellationRequested &&
+                                          exception is RabbitMqConnectionException or OperationCanceledException or TimeoutException)
         {
-            lastException = exception;
+            lastConnectFailure = exception;
         }
 
-        await Task.Delay(TimeSpan.FromSeconds(1));
+        await Task.Delay(TimeSpan.FromSeconds(1), TimeProvider.System, deadline);
     }
-
-    throw new InvalidOperationException("RabbitMQ did not become ready for MassTransit.", lastException);
 }
 
 internal sealed record CapturedActivity(
