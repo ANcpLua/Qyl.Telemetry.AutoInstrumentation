@@ -22,6 +22,7 @@ internal static class QylDbQuerySummary
     {
         "IF", "NOT", "EXISTS", "ONLY", "TEMP", "TEMPORARY", "UNIQUE", "CLUSTERED", "NONCLUSTERED",
         "OR", "REPLACE", "GLOBAL", "LOCAL", "LOW_PRIORITY", "HIGH_PRIORITY", "DELAYED", "IGNORE", "QUICK",
+        "TOP", "PERCENT",
     };
 
     // Words that are never a target; meeting one where a target is expected ends the search.
