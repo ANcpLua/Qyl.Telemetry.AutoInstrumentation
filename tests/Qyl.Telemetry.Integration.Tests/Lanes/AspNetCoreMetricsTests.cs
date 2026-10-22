@@ -3,21 +3,29 @@ namespace Qyl.Telemetry.Integration.Tests.Lanes;
 /// <summary>The ASP.NET Core component meters, managed and NativeAOT (a vendor-warned publish).</summary>
 [TestClass]
 [TestCategory("aspnetcore-metrics")]
-public sealed class AspNetCoreMetricsTests(TestContext testContext)
+sealed class AspNetCoreMetricsTests : DemoLaneTests<AspNetCoreMetricsTests>, IDemoLane
 {
-    [TestMethod]
-    public async Task ExportsExpectedTelemetry()
-    {
-        var lane = new DemoContext(DemoLanes.ByName("aspnetcore-metrics"), testContext);
-        lane.BuildManaged();
-        Verify(lane, (await lane.RunManagedAsync("managed ASP.NET Core metrics demo")));
-        Verify(lane, (await lane.RunNativeAotAsync(lane.PublishNativeAot(), "NativeAOT ASP.NET Core metrics demo")));
-    }
+    private const int ReportedMetricSeries = 3;
 
-    private static void Verify(DemoContext lane, DemoRun run)
+    private static readonly DemoVariant[] Variants = [DemoVariant.Managed(DemoRuns.Managed), DemoVariant.NativeAot(DemoRuns.NativeAot)];
+
+    public static string LaneName => "aspnetcore-metrics";
+
+    public static IReadOnlyList<string> RunKeys => [.. Variants.Select(static variant => variant.Key)];
+
+    public static Task<IReadOnlyDictionary<string, DemoRun>> RunAsync(DemoContext lane) => lane.RunAllAsync(Variants);
+
+    [TestMethod]
+    [DynamicData(nameof(SucceedingRuns))]
+    public void DemoReport_EachRun_ReportsAtLeastThreeMetricSeries(string run) =>
+        Assert.IsGreaterThanOrEqualTo(ReportedMetricSeries, Run(run).Array("Metrics").Length);
+
+    [TestMethod]
+    [DynamicData(nameof(SucceedingRuns))]
+    public void ReportedMetrics_EachRun_ReachTheCapture(string run)
     {
-        run.RequireSucceeded().RequireReportPassed();
-        var metrics = run.RequireAtLeast("Metrics", 3, "ASP.NET Core component metrics");
-        lane.Telemetry.Metrics(run, LaneChecks.Metrics(metrics));
+        var unmatched = CapturedTelemetry.UnmatchedMetrics(Run(run), Lane.ServiceName, LaneReport.Metrics(Run(run).Array("Metrics")));
+
+        Assert.IsEmpty(unmatched, string.Join("\n", unmatched));
     }
 }

@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace Qyl.Telemetry.Integration.Tests.Lanes;
 
 /// <summary>
@@ -7,17 +9,32 @@ namespace Qyl.Telemetry.Integration.Tests.Lanes;
 /// </summary>
 [TestClass]
 [TestCategory("mongodb")]
-public sealed class MongoDbTests(TestContext testContext)
+sealed class MongoDbTests : SpanDemoLaneTests<MongoDbTests>, ISpanDemoLane
 {
+    private const string Inserted = "inserted-documents=1";
+    private const string Found = "found-documents=1";
+    private const string Deleted = "deleted-documents=1";
+    private const int ReportedActivities = 6;
+
+    private static readonly DemoVariant[] Variants = [DemoVariant.Managed(DemoRuns.Managed)];
+
+    public static string LaneName => "mongodb";
+
+    public static IReadOnlyList<string> RunKeys => [.. Variants.Select(static variant => variant.Key)];
+
+    public static IEnumerable<object[]> OutcomeTokens => Rows(RunKeys, Inserted, Found, Deleted);
+
+    public static Task<IReadOnlyDictionary<string, DemoRun>> RunAsync(DemoContext lane) => lane.RunAllAsync(Variants);
+
+    public static IEnumerable<JsonElement> ReportedSpans(DemoRun run) => run.Array("Activities");
+
     [TestMethod]
-    public async Task ExportsExpectedTelemetry()
-    {
-        var lane = new DemoContext(DemoLanes.ByName("mongodb"), testContext);
-        lane.BuildManaged();
-        var run = (await lane.RunManagedAsync("managed MongoDB demo"))
-            .RequireSucceeded()
-            .RequireTokens("inserted-documents=1", "found-documents=1", "deleted-documents=1")
-            .RequireReportPassed();
-        lane.Telemetry.Spans(run, run.RequireCount("Activities", 6, "MongoDB collection activities"), "MongoDB");
-    }
+    [DynamicData(nameof(OutcomeTokens))]
+    public void DemoOutput_EachRun_PrintsOutcomeToken(string run, string token) =>
+        Assert.Contains(token, Run(run).Stdout, StringComparison.Ordinal);
+
+    [TestMethod]
+    [DynamicData(nameof(SucceedingRuns))]
+    public void DemoReport_EachRun_ReportsSixActivities(string run) =>
+        Assert.HasCount(ReportedActivities, Run(run).Array("Activities"));
 }

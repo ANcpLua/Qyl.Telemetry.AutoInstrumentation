@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace Qyl.Telemetry.Integration.Tests.Lanes;
 
 /// <summary>
@@ -7,20 +9,31 @@ namespace Qyl.Telemetry.Integration.Tests.Lanes;
 /// </summary>
 [TestClass]
 [TestCategory("masstransit")]
-public sealed class MassTransitTests(TestContext testContext)
+sealed class MassTransitTests : SpanDemoLaneTests<MassTransitTests>, ISpanDemoLane
 {
-    [TestMethod]
-    public async Task ExportsExpectedTelemetry()
-    {
-        var lane = new DemoContext(DemoLanes.ByName("masstransit"), testContext);
-        lane.BuildManaged();
-        Verify(lane, (await lane.RunManagedAsync("managed MassTransit demo")));
-        Verify(lane, (await lane.RunNativeAotAsync(lane.PublishNativeAot(), "NativeAOT MassTransit demo")));
-    }
+    private const string Published = "published=alpha";
+    private const string Sent = "sent=beta";
+    private const int ReportedActivities = 2;
 
-    private static void Verify(DemoContext lane, DemoRun run)
-    {
-        run.RequireSucceeded().RequireTokens("published=alpha", "sent=beta").RequireReportPassed();
-        lane.Telemetry.Spans(run, run.RequireCount("Activities", 2, "MassTransit activities"), "MassTransit");
-    }
+    private static readonly DemoVariant[] Variants = [DemoVariant.Managed(DemoRuns.Managed), DemoVariant.NativeAot(DemoRuns.NativeAot)];
+
+    public static string LaneName => "masstransit";
+
+    public static IReadOnlyList<string> RunKeys => [.. Variants.Select(static variant => variant.Key)];
+
+    public static IEnumerable<object[]> OutcomeTokens => Rows(RunKeys, Published, Sent);
+
+    public static Task<IReadOnlyDictionary<string, DemoRun>> RunAsync(DemoContext lane) => lane.RunAllAsync(Variants);
+
+    public static IEnumerable<JsonElement> ReportedSpans(DemoRun run) => run.Array("Activities");
+
+    [TestMethod]
+    [DynamicData(nameof(OutcomeTokens))]
+    public void DemoOutput_EachRun_PrintsOutcomeToken(string run, string token) =>
+        Assert.Contains(token, Run(run).Stdout, StringComparison.Ordinal);
+
+    [TestMethod]
+    [DynamicData(nameof(SucceedingRuns))]
+    public void DemoReport_EachRun_ReportsTwoActivities(string run) =>
+        Assert.HasCount(ReportedActivities, Run(run).Array("Activities"));
 }

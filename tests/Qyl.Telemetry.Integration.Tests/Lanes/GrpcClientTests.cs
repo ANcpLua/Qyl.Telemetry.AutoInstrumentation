@@ -1,33 +1,48 @@
+using System.Text.Json;
+
 namespace Qyl.Telemetry.Integration.Tests.Lanes;
 
 /// <summary>Grpc.Net.Client's native source: the raw CallInvoker shape, the ClientBase shape, and the
-/// unconfigured metadata contract, each managed and NativeAOT.</summary>
+/// unconfigured metadata contract, each managed and NativeAOT. ClientBase&lt;T&gt; and the raw CallInvoker
+/// share one native owner; metadata is opt-in in both.</summary>
 [TestClass]
 [TestCategory("grpc-client")]
-public sealed class GrpcClientTests(TestContext testContext)
+sealed class GrpcClientTests : SpanDemoLaneTests<GrpcClientTests>, ISpanDemoLane
 {
+    private const string ManagedClient = "managed-client";
+    private const string NativeAotClient = "nativeaot-client";
+    private const string ExpectedFailure = "expected-failure=Unavailable";
+    private const string GrpcDomain = "rpc.grpc";
+    private const int GrpcClientActivities = 2;
+
+    private static readonly (string, string) ClientMode = ("QYL_GRPC_DEMO_MODE", "client");
+
+    private static readonly DemoVariant[] Variants =
+    [
+        DemoVariant.Managed(DemoRuns.Managed),
+        DemoVariant.NativeAot(DemoRuns.NativeAot),
+        DemoVariant.Managed(ManagedClient, ClientMode),
+        DemoVariant.NativeAot(NativeAotClient, ClientMode),
+    ];
+
+    public static string LaneName => "grpc-client";
+
+    public static IReadOnlyList<string> RunKeys => [.. Variants.Select(static variant => variant.Key)];
+
+    public static IEnumerable<object[]> OutcomeTokens => Rows(RunKeys, ExpectedFailure);
+
+    public static Task<IReadOnlyDictionary<string, DemoRun>> RunAsync(DemoContext lane) => lane.RunAllAsync(Variants);
+
+    public static IEnumerable<JsonElement> ReportedSpans(DemoRun run) => run.Array("Activities");
+
     [TestMethod]
-    public async Task ExportsExpectedTelemetry()
-    {
-        var lane = new DemoContext(DemoLanes.ByName("grpc-client"), testContext);
-        lane.BuildManaged();
-        var executable = lane.PublishNativeAot();
-        Verify(lane, (await lane.RunManagedAsync("managed gRPC client demo")));
-        Verify(lane, (await lane.RunNativeAotAsync(executable, "NativeAOT gRPC client demo")));
+    [DynamicData(nameof(OutcomeTokens))]
+    public void DemoOutput_EachRun_PrintsOutcomeToken(string run, string token) =>
+        Assert.Contains(token, Run(run).Stdout, StringComparison.Ordinal);
 
-        // ClientBase<T> and the raw CallInvoker share one native owner; metadata is opt-in in both.
-        var client = lane.With(("QYL_GRPC_DEMO_MODE", "client"));
-        Verify(lane, (await lane.RunManagedAsync("managed gRPC client demo (client lane)", client)));
-        Verify(lane, (await lane.RunNativeAotAsync(executable, "NativeAOT gRPC client demo (client lane)", client)));
-
-    }
-
-    private static void Verify(DemoContext lane, DemoRun run)
-    {
-        run.RequireSucceeded().RequireTokens("expected-failure=Unavailable").RequireReportPassed();
-        var activities = run.Array("Activities");
-        var grpc = activities.EnumerateArray().Count(static activity => ReportedActivity.Tag(activity, "qyl.instrumentation.domain") == "rpc.grpc");
-        Assert.AreEqual(2, grpc, $"{run.Label} expected exactly 2 gRPC client activities, got {grpc}:\n{activities}");
-        lane.Telemetry.Spans(run, activities, "gRPC client");
-    }
+    [TestMethod]
+    [DynamicData(nameof(SucceedingRuns))]
+    public void DemoReport_EachRun_ReportsTwoGrpcClientActivities(string run) =>
+        Assert.HasCount(GrpcClientActivities,
+            Run(run).Array("Activities").Where(static activity => ReportedActivity.Tag(activity, "qyl.instrumentation.domain") == GrpcDomain));
 }

@@ -3,20 +3,29 @@ namespace Qyl.Telemetry.Integration.Tests.Lanes;
 /// <summary>The System.Runtime meter and the process instruments, managed and NativeAOT.</summary>
 [TestClass]
 [TestCategory("netruntime-metrics")]
-public sealed class NetRuntimeMetricsTests(TestContext testContext)
+sealed class NetRuntimeMetricsTests : DemoLaneTests<NetRuntimeMetricsTests>, IDemoLane
 {
-    [TestMethod]
-    public async Task ExportsExpectedTelemetry()
-    {
-        var lane = new DemoContext(DemoLanes.ByName("netruntime-metrics"), testContext);
-        lane.BuildManaged();
-        Verify(lane, (await lane.RunManagedAsync("managed .NET runtime metrics demo")));
-        Verify(lane, (await lane.RunNativeAotAsync(lane.PublishNativeAot(), "NativeAOT .NET runtime metrics demo")));
-    }
+    private const int ReportedMetricSeries = 6;
 
-    private static void Verify(DemoContext lane, DemoRun run)
+    private static readonly DemoVariant[] Variants = [DemoVariant.Managed(DemoRuns.Managed), DemoVariant.NativeAot(DemoRuns.NativeAot)];
+
+    public static string LaneName => "netruntime-metrics";
+
+    public static IReadOnlyList<string> RunKeys => [.. Variants.Select(static variant => variant.Key)];
+
+    public static Task<IReadOnlyDictionary<string, DemoRun>> RunAsync(DemoContext lane) => lane.RunAllAsync(Variants);
+
+    [TestMethod]
+    [DynamicData(nameof(SucceedingRuns))]
+    public void DemoReport_EachRun_ReportsAtLeastSixMetricSeries(string run) =>
+        Assert.IsGreaterThanOrEqualTo(ReportedMetricSeries, Run(run).Array("Metrics").Length);
+
+    [TestMethod]
+    [DynamicData(nameof(SucceedingRuns))]
+    public void ReportedMetrics_EachRun_ReachTheCapture(string run)
     {
-        run.RequireSucceeded().RequireReportPassed();
-        lane.Telemetry.Metrics(run, LaneChecks.Metrics(run.RequireAtLeast("Metrics", 6, ".NET runtime/process metrics")));
+        var unmatched = CapturedTelemetry.UnmatchedMetrics(Run(run), Lane.ServiceName, LaneReport.Metrics(Run(run).Array("Metrics")));
+
+        Assert.IsEmpty(unmatched, string.Join("\n", unmatched));
     }
 }

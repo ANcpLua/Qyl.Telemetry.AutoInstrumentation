@@ -299,13 +299,14 @@ Fallout targets in `eng/build`; `make <target>` wraps `./eng/build.sh <Target>`,
 
 - `Check` rewrites `src/*/PublicAPI.txt` and never fails on an API change; it fails unless the top
   `CHANGELOG.md` entry is `<Version>`.
-- `Demos`: thirty demo applications under `demos/`, run as native MSTest cases in
+- `Demos`: thirty demo applications under `demos/`, run as native MSTest lanes in
   `tests/Qyl.Telemetry.Integration.Tests/Lanes/<Name>Tests.cs`, NativeAOT where the integration
-  supports it. Each run owns an `OtlpReceiver` from `Qyl.Telemetry.Tests`, passed as `QYL_ENDPOINT`;
-  the case compares the application's report with independent expectations and the complete
-  capture. Captures and registry reports stay under `artifacts/integration-tests`. Ten lanes need a
-  [testbed](#testbed-on-railway) service. Run by hand, a demo exports through `AddQyl()`'s
-  discovery to a running `qyl up`.
+  supports it. Each lane class runs its demo once, every variant in turn, and each run owns an
+  `OtlpReceiver` from `Qyl.Telemetry.Tests`, passed as `QYL_ENDPOINT`. Its tests then assert one
+  behavior each against those runs: the process, the application's report against independent
+  expectations, and the complete capture. Captures and registry reports stay under
+  `artifacts/integration-tests`. Ten lanes need a [testbed](#testbed-on-railway) service. Run by
+  hand, a demo exports through `AddQyl()`'s discovery to a running `qyl up`.
 - The integration tests use the support library `Qyl.Telemetry.Tests` and the HTTP-header and
   gRPC-metadata fixtures use `Qyl.Telemetry.Tests.Capture`, both from the submodule
   `eng/dependencies/Qyl.Telemetry.Tests`; `./eng/build.sh` initializes it, direct `dotnet` commands

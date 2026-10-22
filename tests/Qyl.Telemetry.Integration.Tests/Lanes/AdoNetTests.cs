@@ -1,24 +1,35 @@
+using System.Text.Json;
+
 namespace Qyl.Telemetry.Integration.Tests.Lanes;
 
 /// <summary>The generic ADO.NET DbCommand interceptor against SQLite, managed and NativeAOT.</summary>
 [TestClass]
 [TestCategory("adonet")]
-public sealed class AdoNetTests(TestContext testContext)
+sealed class AdoNetTests : SpanDemoLaneTests<AdoNetTests>, ISpanDemoLane
 {
-    [TestMethod]
-    public async Task ExportsExpectedTelemetry()
-    {
-        var lane = new DemoContext(DemoLanes.ByName("adonet"), testContext);
-        lane.BuildManaged();
-        Verify(lane, (await lane.RunManagedAsync("managed ADO.NET demo")));
-        Verify(lane, (await lane.RunNativeAotAsync(lane.PublishNativeAot(), "NativeAOT ADO.NET demo")));
-    }
+    private const string AdoNetValue = "adonet-value=alpha";
+    private const string ExpectedError = "expected-adonet-error=SqliteException";
+    private const int ReportedActivities = 4;
 
-    private static void Verify(DemoContext lane, DemoRun run)
-    {
-        run.RequireSucceeded()
-            .RequireTokens("adonet-value=alpha", "expected-adonet-error=SqliteException")
-            .RequireReportPassed();
-        lane.Telemetry.Spans(run, run.RequireCount("Activities", 4, "ADO.NET activities"), "ADO.NET");
-    }
+    private static readonly DemoVariant[] Variants = [DemoVariant.Managed(DemoRuns.Managed), DemoVariant.NativeAot(DemoRuns.NativeAot)];
+
+    public static string LaneName => "adonet";
+
+    public static IReadOnlyList<string> RunKeys => [.. Variants.Select(static variant => variant.Key)];
+
+    public static IEnumerable<object[]> OutcomeTokens => Rows(RunKeys, AdoNetValue, ExpectedError);
+
+    public static Task<IReadOnlyDictionary<string, DemoRun>> RunAsync(DemoContext lane) => lane.RunAllAsync(Variants);
+
+    public static IEnumerable<JsonElement> ReportedSpans(DemoRun run) => run.Array("Activities");
+
+    [TestMethod]
+    [DynamicData(nameof(OutcomeTokens))]
+    public void DemoOutput_EachRun_PrintsOutcomeToken(string run, string token) =>
+        Assert.Contains(token, Run(run).Stdout, StringComparison.Ordinal);
+
+    [TestMethod]
+    [DynamicData(nameof(SucceedingRuns))]
+    public void DemoReport_EachRun_ReportsFourActivities(string run) =>
+        Assert.HasCount(ReportedActivities, Run(run).Array("Activities"));
 }

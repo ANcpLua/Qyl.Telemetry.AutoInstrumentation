@@ -6,3 +6,5 @@ global using Serilog;
 
 // The applications bind ports and the AOT publisher owns a shared build cache.
 [assembly: DoNotParallelize]
+// The demo lanes share internal run types, so their test classes are internal.
+[assembly: DiscoverInternals]

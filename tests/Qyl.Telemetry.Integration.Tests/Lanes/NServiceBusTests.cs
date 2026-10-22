@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace Qyl.Telemetry.Integration.Tests.Lanes;
 
 /// <summary>
@@ -6,17 +8,32 @@ namespace Qyl.Telemetry.Integration.Tests.Lanes;
 /// </summary>
 [TestClass]
 [TestCategory("nservicebus")]
-public sealed class NServiceBusTests(TestContext testContext)
+sealed class NServiceBusTests : SpanDemoLaneTests<NServiceBusTests>, ISpanDemoLane
 {
+    private const string Published = "published=alpha";
+    private const string SentAndHandled = "sent-and-handled=beta";
+    private const string ExpectedError = "expected-nservicebus-error=no-route";
+    private const int ReportedActivities = 5;
+
+    private static readonly DemoVariant[] Variants = [DemoVariant.Managed(DemoRuns.Managed)];
+
+    public static string LaneName => "nservicebus";
+
+    public static IReadOnlyList<string> RunKeys => [.. Variants.Select(static variant => variant.Key)];
+
+    public static IEnumerable<object[]> OutcomeTokens => Rows(RunKeys, Published, SentAndHandled, ExpectedError);
+
+    public static Task<IReadOnlyDictionary<string, DemoRun>> RunAsync(DemoContext lane) => lane.RunAllAsync(Variants);
+
+    public static IEnumerable<JsonElement> ReportedSpans(DemoRun run) => run.Array("Activities");
+
     [TestMethod]
-    public async Task ExportsExpectedTelemetry()
-    {
-        var lane = new DemoContext(DemoLanes.ByName("nservicebus"), testContext);
-        lane.BuildManaged();
-        var run = (await lane.RunManagedAsync("managed NServiceBus demo"))
-            .RequireSucceeded()
-            .RequireTokens("published=alpha", "sent-and-handled=beta", "expected-nservicebus-error=no-route")
-            .RequireReportPassed();
-        lane.Telemetry.Spans(run, run.RequireCount("Activities", 5, "NServiceBus activities"), "NServiceBus");
-    }
+    [DynamicData(nameof(OutcomeTokens))]
+    public void DemoOutput_EachRun_PrintsOutcomeToken(string run, string token) =>
+        Assert.Contains(token, Run(run).Stdout, StringComparison.Ordinal);
+
+    [TestMethod]
+    [DynamicData(nameof(SucceedingRuns))]
+    public void DemoReport_EachRun_ReportsFiveActivities(string run) =>
+        Assert.HasCount(ReportedActivities, Run(run).Array("Activities"));
 }

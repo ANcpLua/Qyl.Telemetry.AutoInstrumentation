@@ -21,6 +21,7 @@
     <ProjectReference Include="../../src/Qyl.Telemetry.AutoInstrumentation.SqlClient/Qyl.Telemetry.AutoInstrumentation.SqlClient.csproj" />
     <ProjectReference Include="../../eng/dependencies/Qyl.Telemetry.Tests/Qyl.Telemetry.Tests/Qyl.Telemetry.Tests.csproj" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
     <PackageReference Include="OpenTelemetry.Exporter.InMemory" />
   </ItemGroup>
 </Project>

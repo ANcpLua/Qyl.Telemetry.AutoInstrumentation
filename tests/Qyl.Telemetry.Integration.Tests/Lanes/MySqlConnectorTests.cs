@@ -1,16 +1,24 @@
+using System.Text.Json;
+
 namespace Qyl.Telemetry.Integration.Tests.Lanes;
 
 /// <summary>
 /// MySqlConnector's native source against the testbed MySQL, managed and NativeAOT. Unlike Npgsql it
-/// traces every Open, pooled or not; closing the connection is what it does not trace.
+/// traces every Open, pooled or not; closing the connection is what it does not trace. MySqlConnector
+/// picks its attribute flavour from OTEL_SEMCONV_STABILITY_OPT_IN, and the README documents qyl against
+/// the stable one; the demo sets it too, so neither side can drift silently. 1054 is ER_BAD_FIELD_ERROR,
+/// which the failed span carries in error.type and db.response.status_code.
 /// </summary>
 [TestClass]
 [TestCategory("mysqlconnector")]
-public sealed class MySqlConnectorTests(TestContext testContext)
+sealed class MySqlConnectorTests : SpanDemoLaneTests<MySqlConnectorTests>, ISpanDemoLane
 {
-    // MySqlConnector picks its attribute flavour from this variable, and the README documents qyl
-    // against the stable one. The demo sets it too, so neither side can drift silently.
-    private const string StabilityOptIn = "database";
+    private const string ConnectionOpen = "connection-state=Open";
+    private const string SelectScalar = "select-scalar=1";
+    private const string ExpectedErrorNumber = "expected-mysql-error-number=1054";
+    private const string ExperimentalPrefix = "Experimental.";
+
+    private static readonly (string, string) StabilityOptIn = ("OTEL_SEMCONV_STABILITY_OPT_IN", "database");
 
     private static readonly Dictionary<string, string[]> Operations = new(StringComparer.Ordinal)
     {
@@ -21,25 +29,38 @@ public sealed class MySqlConnectorTests(TestContext testContext)
         ["pooled-reopen"] = ["MySqlConnector|Client"],
     };
 
-    [TestMethod]
-    public async Task ExportsExpectedTelemetry()
-    {
-        var lane = new DemoContext(DemoLanes.ByName("mysqlconnector"), testContext);
-        var environment = lane.With(("OTEL_SEMCONV_STABILITY_OPT_IN", StabilityOptIn));
-        lane.BuildManaged();
-        Verify(lane, (await lane.RunManagedAsync("managed MySqlConnector demo", environment)));
-        Verify(lane, (await lane.RunNativeAotAsync(lane.PublishNativeAot(), "NativeAOT MySqlConnector demo", environment)));
-    }
+    private static readonly DemoVariant[] Variants =
+        [DemoVariant.Managed(DemoRuns.Managed, StabilityOptIn), DemoVariant.NativeAot(DemoRuns.NativeAot, StabilityOptIn)];
 
-    private static void Verify(DemoContext lane, DemoRun run)
-    {
-        run.RequireSucceeded()
-            // ER_BAD_FIELD_ERROR, which the failed span carries in error.type and db.response.status_code.
-            .RequireTokens("connection-state=Open", "select-scalar=1", "expected-mysql-error-number=1054")
-            .RequireReportPassed();
-        LaneChecks.ExactStrings(run, "ExcludedSourcePrefixes", ["Experimental."]);
-        LaneChecks.SpanSets(run, "Operations", "Operation", Operations);
-        var total = Operations.Values.Sum(static spans => spans.Length);
-        lane.Telemetry.Spans(run, run.RequireCount("Activities", total, "MySqlConnector activities"), "MySqlConnector");
-    }
+    public static string LaneName => "mysqlconnector";
+
+    public static IReadOnlyList<string> RunKeys => [.. Variants.Select(static variant => variant.Key)];
+
+    public static IEnumerable<object[]> OutcomeTokens => Rows(RunKeys, ConnectionOpen, SelectScalar, ExpectedErrorNumber);
+
+    public static IEnumerable<object[]> SpanSetSides => Rows(RunKeys, LaneReport.Expected, LaneReport.Actual);
+
+    public static Task<IReadOnlyDictionary<string, DemoRun>> RunAsync(DemoContext lane) => lane.RunAllAsync(Variants);
+
+    public static IEnumerable<JsonElement> ReportedSpans(DemoRun run) => run.Array("Activities");
+
+    [TestMethod]
+    [DynamicData(nameof(OutcomeTokens))]
+    public void DemoOutput_EachRun_PrintsOutcomeToken(string run, string token) =>
+        Assert.Contains(token, Run(run).Stdout, StringComparison.Ordinal);
+
+    [TestMethod]
+    [DynamicData(nameof(SucceedingRuns))]
+    public void ExcludedSourcePrefixes_EachRun_AreOnlyExperimental(string run) =>
+        Assert.AreSequenceEqual([ExperimentalPrefix], Run(run).Strings("ExcludedSourcePrefixes"));
+
+    [TestMethod]
+    [DynamicData(nameof(SpanSetSides))]
+    public void SpanSets_EachRunAndSide_MatchThePinnedSpansPerOperation(string run, string side) =>
+        Assert.AreSequenceEqual(LaneReport.SpanSets(Operations), LaneReport.SpanSets(Run(run), "Operations", "Operation", side), SequenceOrder.InAnyOrder);
+
+    [TestMethod]
+    [DynamicData(nameof(SucceedingRuns))]
+    public void DemoReport_EachRun_ReportsOneActivityPerPinnedSpan(string run) =>
+        Assert.HasCount(Operations.Values.Sum(static spans => spans.Length), Run(run).Array("Activities"));
 }

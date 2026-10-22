@@ -21,7 +21,7 @@ using SessionAttributes = Qyl.Telemetry.SemanticConventions.Incubating.Attribute
 // process boundary only because the application put it there.
 //
 // One executable, two roles. The two roles run as two real operating-system processes, and the
-// PROCESSES ARE STARTED BY eng/build/Demos/Lanes/SessionPropagationLane.cs ALONE — this program never
+// PROCESSES ARE STARTED BY tests/Qyl.Telemetry.Integration.Tests/Lanes/SessionPropagationTests.cs ALONE — this program never
 // starts itself, and never starts any other process. Two hosts inside one process would leave
 // Activity.Parent linked across the "boundary" and the third property below would pass while being
 // false; that is the measurement error this demo exists to avoid.
@@ -150,6 +150,8 @@ static async Task<int> RunDownstreamAsync(int port)
     });
 
     await app.StartAsync();
+    // The lane starts the upstream once this line appears: Kestrel is bound and accepting.
+    Console.WriteLine("downstream-listening=" + port.ToString(CultureInfo.InvariantCulture));
 
     // The in-process control, in THIS process: a locally rooted span carrying its own session and a
     // child that inherits it. A downstream whose processor was simply absent would otherwise

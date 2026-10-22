@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.ServiceModel;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -127,6 +128,7 @@ internal sealed record CapturedActivity(
 
 internal sealed record CoreWcfReport(
     bool Pass,
+    string RuntimeMode,
     string[] Failures,
     bool QylRegistrationEnabled,
     bool QylRegistrationObserved,
@@ -152,6 +154,7 @@ internal sealed record CoreWcfReport(
         if (!registrationEnabled)
             return new CoreWcfReport(
                 failures.Count is 0,
+                CurrentRuntimeMode(),
                 failures.ToArray(),
                 false,
                 registrationObserved,
@@ -188,11 +191,15 @@ internal sealed record CoreWcfReport(
 
         return new CoreWcfReport(
             failures.Count is 0,
+            CurrentRuntimeMode(),
             failures.ToArray(),
             true,
             registrationObserved,
             coreWcfActivities);
     }
+
+    private static string CurrentRuntimeMode() =>
+        RuntimeFeature.IsDynamicCodeSupported ? "dynamic-code-supported" : "nativeaot";
 
     private static void RequireOperation(
         IEnumerable<CapturedActivity> activities,

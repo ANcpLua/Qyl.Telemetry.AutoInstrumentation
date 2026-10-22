@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace Qyl.Telemetry.Integration.Tests.Lanes;
 
@@ -6,117 +7,148 @@ namespace Qyl.Telemetry.Integration.Tests.Lanes;
 /// MySql.Data's connector-net source against the testbed MySQL, managed, with and without the
 /// stability opt-in it does not read; and its NativeAOT binary pinned to the exact abort inside the
 /// driver, so the lane fails — and gets promoted — the day the driver runs under NativeAOT.
+/// A physical open traces the driver's five handshake statements; the Connection activity it starts
+/// stops only at Close/Dispose, so it lands in the close phase. A pooled re-open traces nothing at
+/// open. Every user command is exactly one span. MySql.Data keeps writing to a stopped activity: the
+/// failing command reads ERROR at the instant a processor sees it and OK once the driver is done, and
+/// the batch exporter reads every otel.status_code after the driver is done. db.statement carries the
+/// full command text with no opt-in: AddConnectorNet() is AddSource("connector-net") and nothing else.
+/// Under NativeAOT the first Open() runs MySqlConfiguration's static constructor, which reads
+/// ConfigurationManager, and the config host it activates by name is gone from the trimmed application.
 /// </summary>
 [TestClass]
 [TestCategory("mysqldata")]
-public sealed class MySqlDataTests(TestContext testContext)
+sealed class MySqlDataTests : SpanDemoLaneTests<MySqlDataTests>, ISpanDemoLane
 {
+    private const string ManagedStabilityOptIn = "managed-stability-opt-in";
     private const string ConnectorNetClient = "connector-net/Client";
+    private const string FailingPhase = "command-failing-select";
+    private const string SelectPhase = "command-select";
+    private const string ExperimentalPrefix = "Experimental.";
+    private const string PhysicalOpen = "physical-open=1";
+    private const string SelectScalar = "select-scalar=1";
+    private const string ExpectedError = "expected-mysqldata-error=MySql.Data.MySqlClient.MySqlException";
+    private const string PooledOpen = "pooled-open=1";
+    private const string ConfigurationConstructor = "MySql.Data.MySqlClient.MySqlConfiguration..cctor()";
+    private const string MissingConfigurationHost = "No parameterless constructor defined for type 'System.Configuration.ClientConfigurationHost'.";
 
-    // A physical open traces the driver's five handshake statements; the Connection activity it
-    // starts stops only at Close/Dispose, so it lands in the close phase. A pooled re-open traces
-    // nothing at open. Every user command is exactly one span.
     private static readonly Dictionary<string, string[]> SpanSets = new(StringComparer.Ordinal)
     {
         ["physical-open"] = [ConnectorNetClient, ConnectorNetClient, ConnectorNetClient, ConnectorNetClient, ConnectorNetClient],
-        ["command-select"] = [ConnectorNetClient],
-        ["command-failing-select"] = [ConnectorNetClient],
+        [SelectPhase] = [ConnectorNetClient],
+        [FailingPhase] = [ConnectorNetClient],
         ["close"] = [ConnectorNetClient],
         ["pooled-open"] = [],
         ["pooled-close"] = [ConnectorNetClient],
     };
 
-    // The first Open() runs MySqlConfiguration's static constructor, which reads ConfigurationManager,
-    // and the config host it activates by name is gone from the trimmed application.
-    private static readonly string[] NativeAotAbortMarkers =
+    private static readonly DemoVariant[] Variants =
     [
-        "MySql.Data.MySqlClient.MySqlConfiguration..cctor()",
-        "No parameterless constructor defined for type 'System.Configuration.ClientConfigurationHost'.",
+        DemoVariant.Managed(DemoRuns.Managed),
+        DemoVariant.Managed(ManagedStabilityOptIn, ("OTEL_SEMCONV_STABILITY_OPT_IN", "database")),
+        DemoVariant.NativeAot(DemoRuns.NativeAot),
     ];
 
-    [TestMethod]
-    public async Task ExportsExpectedTelemetry()
+    private static readonly string[] ManagedRuns = [DemoRuns.Managed, ManagedStabilityOptIn];
+
+    private static int TotalSpans => SpanSets.Values.Sum(static spans => spans.Length);
+
+    public static string LaneName => "mysqldata";
+
+    public static IReadOnlyList<string> RunKeys => [.. Variants.Select(static variant => variant.Key)];
+
+    public static IReadOnlyList<string> PinnedFailures => [DemoRuns.NativeAot];
+
+    public static IEnumerable<object[]> OutcomeTokens => Rows(ManagedRuns, PhysicalOpen, SelectScalar, ExpectedError, PooledOpen);
+
+    public static IEnumerable<object[]> SpanSetSides => Rows(ManagedRuns, LaneReport.Expected, LaneReport.Actual);
+
+    public static Task<IReadOnlyDictionary<string, DemoRun>> RunAsync(DemoContext lane) => lane.RunAllAsync(Variants);
+
+    public static IEnumerable<JsonElement> ReportedSpans(DemoRun run)
     {
-        var lane = new DemoContext(DemoLanes.ByName("mysqldata"), testContext);
-        lane.BuildManaged();
-        var executable = lane.PublishNativeAot();
-        var managed = Verify(lane, (await lane.RunManagedAsync("managed MySql.Data demo")));
-
-        // The driver reads no stability opt-in: the same run with the variable set has to produce the same spans.
-        var optIn = Verify(lane, (await lane.RunManagedAsync("managed MySql.Data demo (stability opt-in)", lane.With(("OTEL_SEMCONV_STABILITY_OPT_IN", "database")))));
-        VerifyStatementCaptureIsUnconditional(managed, optIn);
-        VerifyNativeAotLimitation((await lane.RunNativeAotAsync(executable, "NativeAOT MySql.Data demo")));
-    }
-
-    private static DemoRun Verify(DemoContext lane, DemoRun run)
-    {
-        run.RequireSucceeded()
-            .RequireTokens("physical-open=1", "select-scalar=1", "expected-mysqldata-error=MySql.Data.MySqlClient.MySqlException", "pooled-open=1")
-            .RequireReportPassed();
-        LaneChecks.SpanSets(run, "SpanSets", "Phase", SpanSets, sortExpected: true);
-        LaneChecks.ExcludedWithPrefix(run, "ExcludedSources", "Experimental.", requireSome: true);
-
-        // MySql.Data keeps writing to a stopped activity: the failing command reads ERROR at the instant
-        // a processor sees it and OK once the driver is done. Both readings are asserted.
-        var total = SpanSets.Values.Sum(static spans => spans.Length);
-        var rereadings = run.RequireCount("StatusCodeRereadings", total, "status-code re-readings").EnumerateArray().ToArray();
-        var failing = rereadings.Where(static entry => ReportedActivity.Text(entry, "Phase") == "command-failing-select").ToArray();
-        Assert.HasCount(1, failing, $"{run.Label} expected 1 re-reading for the failing command, got {failing.Length}");
-        Assert.IsTrue(ReportedActivity.Text(failing[0], "AtStop") == "ERROR" && ReportedActivity.Text(failing[0], "AfterStop") == "OK",
-            $"{run.Label} failing command status codes changed shape: {failing[0]}");
-        foreach (var entry in rereadings.Where(static entry => ReportedActivity.Text(entry, "Phase") != "command-failing-select"))
+        foreach (var activity in run.Array("Activities"))
         {
-            Assert.IsTrue(ReportedActivity.Text(entry, "AtStop") == "OK" && ReportedActivity.Text(entry, "AfterStop") == "OK",
-                $"{run.Label} expected OK/OK on a succeeding span, got {entry}");
-        }
-
-        // The report holds each span's tags as the processor saw them at stop; the batch exporter reads
-        // them after the driver is done, when every otel.status_code reads OK (asserted just above).
-        var exported = new System.Text.Json.Nodes.JsonArray();
-        foreach (var activity in run.RequireCount("Activities", total, "connector-net activities").EnumerateArray())
-        {
-            var node = System.Text.Json.Nodes.JsonNode.Parse(activity.GetRawText())!.AsObject();
-            if (node["Tags"] is System.Text.Json.Nodes.JsonObject tags && tags.ContainsKey("otel.status_code"))
+            var node = JsonNode.Parse(activity.GetRawText())!.AsObject();
+            if (node["Tags"] is JsonObject tags && tags.ContainsKey("otel.status_code"))
                 tags["otel.status_code"] = "OK";
-            exported.Add(node);
+            yield return JsonSerializer.SerializeToElement(node);
         }
-
-        lane.Telemetry.Spans(run, JsonSerializer.SerializeToElement(exported), "connector-net");
-        return run;
     }
 
-    /// <summary>db.statement carries the full command text with no opt-in: AddConnectorNet() is
-    /// AddSource("connector-net") and nothing else, and the stability opt-in reaches no driver code.
-    /// The proof is that the two reports are identical.</summary>
-    private static void VerifyStatementCaptureIsUnconditional(DemoRun defaults, DemoRun optIn)
+    [TestMethod]
+    [DynamicData(nameof(OutcomeTokens))]
+    public void DemoOutput_ManagedRun_PrintsOutcomeToken(string run, string token) =>
+        Assert.Contains(token, Run(run).Stdout, StringComparison.Ordinal);
+
+    [TestMethod]
+    [DynamicData(nameof(SpanSetSides))]
+    public void SpanSets_EachRunAndSide_MatchThePinnedSpansPerPhase(string run, string side) =>
+        Assert.AreSequenceEqual(LaneReport.SpanSets(SpanSets, sort: true), LaneReport.SpanSets(Run(run), "SpanSets", "Phase", side), SequenceOrder.InAnyOrder);
+
+    [TestMethod]
+    [DynamicData(nameof(SucceedingRuns))]
+    public void ExcludedSources_ManagedRun_AreOnlyExperimental(string run) =>
+        Assert.IsEmpty(LaneReport.PrefixViolations(Run(run).Strings("ExcludedSources"), ExperimentalPrefix));
+
+    [TestMethod]
+    [DynamicData(nameof(SucceedingRuns))]
+    public void ExcludedSources_ManagedRun_AreNotEmpty(string run) =>
+        Assert.IsNotEmpty(Run(run).Array("ExcludedSources"));
+
+    [TestMethod]
+    [DynamicData(nameof(SucceedingRuns))]
+    public void StatusCodeRereadings_ManagedRun_CoverEverySpan(string run) =>
+        Assert.HasCount(TotalSpans, Run(run).Array("StatusCodeRereadings"));
+
+    [TestMethod]
+    [DynamicData(nameof(SucceedingRuns))]
+    public void StatusCodeRereadings_FailingCommand_ReadErrorAtStopAndOkAfter(string run)
     {
-        static string[] Shape(DemoRun run) => [.. run.Array("Activities").EnumerateArray()
-            .Select(static activity => string.Join("|",
-                ReportedActivity.Text(activity, "Phase"),
-                ReportedActivity.Text(activity, "Name"),
-                ReportedActivity.Text(activity, "Kind"),
-                string.Join(",", ReportedActivity.TagKeys(activity).Order(StringComparer.Ordinal)),
-                ReportedActivity.Tag(activity, "db.statement") ?? string.Empty))];
+        var failing = Assert.ContainsSingle(Run(run).Array("StatusCodeRereadings").Where(static entry => ReportedActivity.Text(entry, "Phase") == FailingPhase));
 
-        var (left, right) = (Shape(defaults), Shape(optIn));
-        Assert.IsTrue(left.SequenceEqual(right), $"OTEL_SEMCONV_STABILITY_OPT_IN changed the MySql.Data span shape:\ndefault={string.Join("\n", left)}\nopt-in={string.Join("\n", right)}");
-
-        var statements = defaults.Array("Activities").EnumerateArray()
-            .Where(static activity => ReportedActivity.HasTag(activity, "db.statement"))
-            .GroupBy(static activity => ReportedActivity.Text(activity, "Phase") ?? string.Empty)
-            .ToDictionary(static group => group.Key, static group => ReportedActivity.Tag(group.Last(), "db.statement"), StringComparer.Ordinal);
-        Assert.AreEqual("SELECT 1 AS qyl_probe_value", statements.GetValueOrDefault("command-select"), $"db.statement is not the full command text: {string.Join(", ", statements)}");
-        Assert.AreEqual("SELECT qyl_missing_column FROM qyl_missing_table", statements.GetValueOrDefault("command-failing-select"),
-            $"db.statement is not the full command text on the failing command: {string.Join(", ", statements)}");
+        Assert.AreEqual(("ERROR", "OK"), (ReportedActivity.Text(failing, "AtStop"), ReportedActivity.Text(failing, "AfterStop")));
     }
 
-    private static void VerifyNativeAotLimitation(DemoRun run)
-    {
-        Assert.AreNotEqual(0, run.Process.ExitCode,
-            "the NativeAOT MySql.Data demo now runs: replace this pinned limitation with the full Verify() the managed runs use");
-        var output = run.Process.Stdout + run.Process.Stderr;
-        foreach (var marker in NativeAotAbortMarkers)
-            Assert.IsTrue(output.Contains(marker, StringComparison.Ordinal), $"the NativeAOT MySql.Data demo failed somewhere new — '{marker}' is missing\n{run.Process.Describe()}");
-        Log.Information("  NativeAOT MySql.Data run pinned to MySqlConfiguration..cctor / ConfigurationManager");
-    }
+    [TestMethod]
+    [DynamicData(nameof(SucceedingRuns))]
+    public void StatusCodeRereadings_SucceedingSpans_ReadOkAtStopAndAfter(string run) =>
+        Assert.DoesNotContain(static entry => ReportedActivity.Text(entry, "AtStop") != "OK" || ReportedActivity.Text(entry, "AfterStop") != "OK",
+            Run(run).Array("StatusCodeRereadings").Where(static entry => ReportedActivity.Text(entry, "Phase") != FailingPhase));
+
+    [TestMethod]
+    [DynamicData(nameof(SucceedingRuns))]
+    public void DemoReport_ManagedRun_ReportsOneActivityPerPinnedSpan(string run) =>
+        Assert.HasCount(TotalSpans, Run(run).Array("Activities"));
+
+    [TestMethod]
+    public void SpanShape_StabilityOptIn_StaysTheSame() =>
+        Assert.AreSequenceEqual(Shape(Run(DemoRuns.Managed)), Shape(Run(ManagedStabilityOptIn)));
+
+    [TestMethod]
+    [DataRow(SelectPhase, "SELECT 1 AS qyl_probe_value")]
+    [DataRow(FailingPhase, "SELECT qyl_missing_column FROM qyl_missing_table")]
+    public void DbStatement_WithoutOptIn_IsTheFullCommandText(string phase, string statement) =>
+        Assert.AreEqual(statement, Run(DemoRuns.Managed).Array("Activities")
+            .Where(activity => ReportedActivity.Text(activity, "Phase") == phase && ReportedActivity.HasTag(activity, "db.statement"))
+            .Select(static activity => ReportedActivity.Tag(activity, "db.statement"))
+            .LastOrDefault());
+
+    [TestMethod]
+    public void DemoProcess_NativeAot_StillAborts() =>
+        Assert.AreNotEqual(0, Run(DemoRuns.NativeAot).Process.ExitCode, Run(DemoRuns.NativeAot).Process.Describe());
+
+    [TestMethod]
+    [DataRow(ConfigurationConstructor)]
+    [DataRow(MissingConfigurationHost)]
+    public void DemoProcess_NativeAot_AbortsInsideMySqlConfiguration(string marker) =>
+        Assert.Contains(marker, Run(DemoRuns.NativeAot).Process.Stdout + Run(DemoRuns.NativeAot).Process.Stderr, StringComparison.Ordinal);
+
+    private static string[] Shape(DemoRun run) => [.. run.Array("Activities")
+        .Select(static activity => string.Join("|",
+            ReportedActivity.Text(activity, "Phase"),
+            ReportedActivity.Text(activity, "Name"),
+            ReportedActivity.Text(activity, "Kind"),
+            string.Join(",", ReportedActivity.TagKeys(activity).Order(StringComparer.Ordinal)),
+            ReportedActivity.Tag(activity, "db.statement") ?? string.Empty))];
 }

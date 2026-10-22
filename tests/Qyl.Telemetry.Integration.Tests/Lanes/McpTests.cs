@@ -10,89 +10,189 @@ namespace Qyl.Telemetry.Integration.Tests.Lanes;
 /// </summary>
 [TestClass]
 [TestCategory("mcp")]
-public sealed class McpTests(TestContext testContext)
+sealed class McpTests : SpanDemoLaneTests<McpTests>, ISpanDemoLane
 {
+    private const string ManagedRegistrationDisabled = "managed-registration-disabled";
+    private const string NativeAotRegistrationDisabled = "nativeaot-registration-disabled";
     private const string McpSource = "Experimental.ModelContextProtocol";
-    private static readonly string[] SensitiveValues = ["mcp-sensitive-argument-73f8a9", "mcp-sensitive-result-9d20c4"];
+    private const string SensitiveArgument = "mcp-sensitive-argument-73f8a9";
+    private const string SensitiveResult = "mcp-sensitive-result-9d20c4";
+    private const string ToolListed = "ToolListed";
+    private const string ToolCalled = "ToolCalled";
+    private const string Discover = "server/discover";
+    private const string ToolsList = "tools/list";
+    private const string ToolsCall = "tools/call qyl_sensitive_probe";
+    private const string RootTraceId = "RootTraceId";
+    private const string RootSpanId = "RootSpanId";
+    private const string Client = "Client";
+    private const string Server = "Server";
+    private const int EnabledActivities = 6;
 
-    private static readonly Dictionary<string, string> Operations = new(StringComparer.Ordinal)
+    private static readonly Dictionary<string, string> Methods = new(StringComparer.Ordinal)
     {
-        ["server/discover"] = "server/discover",
-        ["tools/list"] = "tools/list",
-        ["tools/call qyl_sensitive_probe"] = "tools/call",
+        [Discover] = "server/discover",
+        [ToolsList] = "tools/list",
+        [ToolsCall] = "tools/call",
     };
 
+    private static readonly (string, string) RegistrationOff = ("OTEL_DOTNET_AUTO_TRACES_MCP_INSTRUMENTATION_ENABLED", "false");
+
+    private static readonly DemoVariant[] Variants =
+    [
+        DemoVariant.Managed(DemoRuns.Managed),
+        DemoVariant.Managed(ManagedRegistrationDisabled, RegistrationOff),
+        DemoVariant.NativeAot(DemoRuns.NativeAot),
+        DemoVariant.NativeAot(NativeAotRegistrationDisabled, RegistrationOff),
+    ];
+
+    private static readonly string[] EnabledRuns = [DemoRuns.Managed, DemoRuns.NativeAot];
+
+    public static string LaneName => "mcp";
+
+    public static IReadOnlyList<string> RunKeys => [.. Variants.Select(static variant => variant.Key)];
+
+    public static IEnumerable<object[]> SensitiveValues => Rows(RunKeys, SensitiveArgument, SensitiveResult);
+
+    public static IEnumerable<object[]> ToolSteps => Rows(RunKeys, ToolListed, ToolCalled);
+
+    public static IEnumerable<object[]> EnabledRunRows => EnabledRuns.Select(static run => new object[] { run });
+
+    public static IEnumerable<object[]> RootContextFields => Rows(EnabledRuns, RootTraceId, RootSpanId);
+
+    public static IEnumerable<object[]> EnabledOperations => Rows(EnabledRuns, Methods.Keys);
+
+    public static IEnumerable<object[]> EnabledSides => Rows(EnabledRuns, Client, Server);
+
+    public static Task<IReadOnlyDictionary<string, DemoRun>> RunAsync(DemoContext lane) => lane.RunAllAsync(Variants, "--disable-build-servers");
+
+    public static IEnumerable<JsonElement> ReportedSpans(DemoRun run) => run.Array("Activities");
+
     [TestMethod]
-    public async Task ExportsExpectedTelemetry()
-    {
-        var lane = new DemoContext(DemoLanes.ByName("mcp"), testContext);
-        var disabled = lane.With(("OTEL_DOTNET_AUTO_TRACES_MCP_INSTRUMENTATION_ENABLED", "false"));
-        lane.BuildManaged("--disable-build-servers");
-        Verify(lane, (await lane.RunManagedAsync("managed MCP demo")), registrationEnabled: true);
-        Verify(lane, (await lane.RunManagedAsync("managed MCP demo (registration disabled)", disabled)), registrationEnabled: false);
+    [DynamicData(nameof(SensitiveValues))]
+    public void DemoOutput_EachRun_LeaksNoSensitiveToolValue(string run, string sensitive) =>
+        Assert.DoesNotContain(sensitive, Run(run).Stdout, StringComparison.Ordinal);
 
-        var executable = lane.PublishNativeAot();
-        Verify(lane, (await lane.RunNativeAotAsync(executable, "NativeAOT MCP demo")), registrationEnabled: true);
-        Verify(lane, (await lane.RunNativeAotAsync(executable, "NativeAOT MCP demo (registration disabled)", disabled)), registrationEnabled: false);
+    [TestMethod]
+    [DynamicData(nameof(ToolSteps))]
+    public void DemoReport_EachRun_ReportsTheToolStep(string run, string step) =>
+        Assert.IsTrue(Run(run).BoolField(step), Run(run).Dump());
+
+    [TestMethod]
+    [DataRow(DemoRuns.Managed, true)]
+    [DataRow(ManagedRegistrationDisabled, false)]
+    [DataRow(DemoRuns.NativeAot, true)]
+    [DataRow(NativeAotRegistrationDisabled, false)]
+    public void DemoReport_EachRun_ReportsWhetherRegistrationIsEnabled(string run, bool registered) =>
+        Assert.AreEqual(registered, Run(run).BoolField("QylRegistrationEnabled"));
+
+    [TestMethod]
+    [DataRow(DemoRuns.Managed, EnabledActivities)]
+    [DataRow(ManagedRegistrationDisabled, 0)]
+    [DataRow(DemoRuns.NativeAot, EnabledActivities)]
+    [DataRow(NativeAotRegistrationDisabled, 0)]
+    public void DemoReport_EachRun_ReportsActivitiesOnlyWhenRegistered(string run, int activities) =>
+        Assert.HasCount(activities, Run(run).Array("Activities"));
+
+    [TestMethod]
+    [DynamicData(nameof(EnabledRunRows))]
+    public void McpSpans_RegistrationEnabled_ComeFromTheMcpSource(string run) =>
+        Assert.AreSequenceEqual(Run(run).Array("Activities").Select(static _ => McpSource),
+            Run(run).Array("Activities").Select(static activity => ReportedActivity.Text(activity, "Source")));
+
+    [TestMethod]
+    [DynamicData(nameof(EnabledRunRows))]
+    public void McpSpans_RegistrationEnabled_AreTwoPerOperation(string run) =>
+        Assert.AreSequenceEqual(Methods.Keys.SelectMany(static operation => new[] { operation, operation }),
+            Run(run).Array("Activities").Select(static activity => ReportedActivity.Text(activity, "Name")), SequenceOrder.InAnyOrder);
+
+    [TestMethod]
+    [DynamicData(nameof(RootContextFields))]
+    public void DemoReport_RegistrationEnabled_NamesTheRootContext(string run, string field) =>
+        Assert.IsNotNull(Run(run).StringField(field), Run(run).Dump());
+
+    [TestMethod]
+    [DynamicData(nameof(EnabledOperations))]
+    public void McpOperation_RegistrationEnabled_IsOneClientAndOneServerSpan(string run, string operation) =>
+        Assert.AreSequenceEqual([Client, Server], Pair(run, operation).Select(static activity => ReportedActivity.Text(activity, "Kind")),
+            SequenceOrder.InAnyOrder);
+
+    [TestMethod]
+    [DynamicData(nameof(EnabledOperations))]
+    public void McpClientSpan_RegistrationEnabled_CarriesMethodTransportAndSession(string run, string operation)
+    {
+        var client = Side(run, operation, Client);
+
+        Assert.AreSequenceEqual([Methods[operation], "pipe", "qyl-mcp-evidence-session"],
+            new[] { ReportedActivity.Tag(client, "mcp.method.name"), ReportedActivity.Tag(client, "network.transport"), ReportedActivity.Tag(client, "session.id") });
     }
 
-    private static void Verify(DemoContext lane, DemoRun run, bool registrationEnabled)
+    [TestMethod]
+    [DynamicData(nameof(EnabledOperations))]
+    public void McpServerSpan_RegistrationEnabled_CarriesMethodAndTransport(string run, string operation)
     {
-        run.RequireSucceeded();
-        foreach (var sensitive in SensitiveValues)
-            Assert.IsFalse(run.Stdout.Contains(sensitive, StringComparison.Ordinal), $"{run.Label} leaked a sensitive tool value to telemetry output: {sensitive}");
-        run.RequireReportPassed()
-            .RequireBool("ToolListed", true)
-            .RequireBool("ToolCalled", true)
-            .RequireBool("QylRegistrationEnabled", registrationEnabled);
+        var server = Side(run, operation, Server);
 
-        var activities = run.RequireCount("Activities", registrationEnabled ? 6 : 0, "MCP activities");
-        lane.Telemetry.Spans(run, activities, "MCP");
-        if (!registrationEnabled)
-            return;
+        Assert.AreSequenceEqual([Methods[operation], "pipe"],
+            new[] { ReportedActivity.Tag(server, "mcp.method.name"), ReportedActivity.Tag(server, "network.transport") });
+    }
 
-        var all = activities.EnumerateArray().ToArray();
-        Assert.IsTrue(all.All(static activity => ReportedActivity.Text(activity, "Source") == McpSource), $"{run.Label} ActivitySource mismatch:\n{activities}");
-        var names = all.GroupBy(static activity => ReportedActivity.Text(activity, "Name") ?? string.Empty).ToDictionary(static group => group.Key, static group => group.Count(), StringComparer.Ordinal);
-        Assert.IsTrue(names.Count == Operations.Count && Operations.Keys.All(name => names.GetValueOrDefault(name) == 2), $"{run.Label} operation set mismatch:\n{activities}");
+    [TestMethod]
+    [DynamicData(nameof(EnabledOperations))]
+    public void McpClientSpan_RegistrationEnabled_IsAChildOfTheQylRoot(string run, string operation)
+    {
+        var client = Side(run, operation, Client);
 
-        var rootTrace = run.StringField("RootTraceId");
-        var rootSpan = run.StringField("RootSpanId");
-        Assert.IsTrue(rootTrace is not null && rootSpan is not null, $"{run.Label} report is missing root context:\n{run.Dump()}");
+        Assert.AreEqual((Run(run).StringField(RootTraceId), Run(run).StringField(RootSpanId)),
+            (ReportedActivity.Text(client, "TraceId"), ReportedActivity.Text(client, "ParentSpanId")));
+    }
 
-        var sessions = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal) { ["Client"] = [], ["Server"] = [] };
-        foreach (var (operation, method) in Operations)
-        {
-            var pair = all.Where(activity => ReportedActivity.Text(activity, "Name") == operation).ToArray();
-            var byKind = pair.ToDictionary(static activity => ReportedActivity.Text(activity, "Kind") ?? string.Empty, StringComparer.Ordinal);
-            Assert.IsTrue(byKind.Count == 2 && byKind.ContainsKey("Client") && byKind.ContainsKey("Server"), $"{run.Label} activity pair mismatch for {operation}:\n{string.Join("\n", pair)}");
-            var client = byKind["Client"];
-            var server = byKind["Server"];
-            RequireTags(run, client, ("mcp.method.name", method), ("network.transport", "pipe"), ("session.id", "qyl-mcp-evidence-session"));
-            RequireTags(run, server, ("mcp.method.name", method), ("network.transport", "pipe"));
+    [TestMethod]
+    [DynamicData(nameof(EnabledOperations))]
+    public void McpServerSpan_RegistrationEnabled_ContinuesTheClientContext(string run, string operation)
+    {
+        var client = Side(run, operation, Client);
+        var server = Side(run, operation, Server);
 
-            Assert.IsTrue(ReportedActivity.Text(client, "TraceId") == rootTrace && ReportedActivity.Text(client, "ParentSpanId") == rootSpan,
-                $"{run.Label} client activity lost its qyl parent for {operation}: {client}");
-            Assert.IsTrue(ReportedActivity.Text(server, "TraceId") == ReportedActivity.Text(client, "TraceId") && ReportedActivity.Text(server, "ParentSpanId") == ReportedActivity.Text(client, "SpanId"),
-                $"{run.Label} server activity did not continue client context for {operation}");
+        Assert.AreEqual((ReportedActivity.Text(client, "TraceId"), ReportedActivity.Text(client, "SpanId")),
+            (ReportedActivity.Text(server, "TraceId"), ReportedActivity.Text(server, "ParentSpanId")));
+    }
 
-            foreach (var (kind, activity) in byKind)
+    [TestMethod]
+    [DynamicData(nameof(EnabledRunRows))]
+    public void McpSpans_RegistrationEnabled_CarryASessionId(string run) =>
+        Assert.DoesNotContain(static activity => string.IsNullOrEmpty(ReportedActivity.Tag(activity, "mcp.session.id")), Run(run).Array("Activities"));
+
+    [TestMethod]
+    [DynamicData(nameof(EnabledSides))]
+    public void McpSessions_RegistrationEnabled_StayStablePerSide(string run, string side) =>
+        Assert.ContainsSingle(Sessions(run, side));
+
+    [TestMethod]
+    [DynamicData(nameof(EnabledRunRows))]
+    public void McpSessions_RegistrationEnabled_DifferBetweenClientAndServer(string run) =>
+        Assert.AreNotEqual(string.Join(",", Sessions(run, Client)), string.Join(",", Sessions(run, Server)));
+
+    [TestMethod]
+    [DynamicData(nameof(EnabledRunRows))]
+    public void McpToolCallSpans_RegistrationEnabled_CarryTheGenAiToolAttributes(string run) =>
+        Assert.AreSequenceEqual(Pair(run, ToolsCall).SelectMany(static _ => new[] { "qyl_sensitive_probe", "execute_tool", "2026-07-28" }),
+            Pair(run, ToolsCall).SelectMany(static activity => new[]
             {
-                var session = ReportedActivity.Tag(activity, "mcp.session.id");
-                Assert.IsFalse(string.IsNullOrEmpty(session), $"{run.Label} {kind} activity is missing mcp.session.id: {activity}");
-                sessions[kind].Add(session!);
-            }
-        }
+                ReportedActivity.Tag(activity, "gen_ai.tool.name"),
+                ReportedActivity.Tag(activity, "gen_ai.operation.name"),
+                ReportedActivity.Tag(activity, "mcp.protocol.version"),
+            }));
 
-        Assert.IsTrue(sessions.Values.All(static values => values.Count == 1), $"{run.Label} session identifiers were not stable");
-        Assert.IsFalse(sessions["Client"].SetEquals(sessions["Server"]), $"{run.Label} client/server sessions were not distinct");
-        foreach (var activity in all.Where(static activity => ReportedActivity.Text(activity, "Name") == "tools/call qyl_sensitive_probe"))
-            RequireTags(run, activity, ("gen_ai.tool.name", "qyl_sensitive_probe"), ("gen_ai.operation.name", "execute_tool"), ("mcp.protocol.version", "2026-07-28"));
-    }
+    private static JsonElement[] Pair(string run, string operation) =>
+        [.. Run(run).Array("Activities").Where(activity => ReportedActivity.Text(activity, "Name") == operation)];
 
-    private static void RequireTags(DemoRun run, JsonElement activity, params (string Key, string Value)[] expected)
-    {
-        foreach (var (key, value) in expected)
-            Assert.AreEqual(value, ReportedActivity.Tag(activity, key), $"{run.Label} MCP activity tag mismatch for {key}: expected={value} activity={activity}");
-    }
+    private static JsonElement Side(string run, string operation, string kind) =>
+        Pair(run, operation).First(activity => ReportedActivity.Text(activity, "Kind") == kind);
+
+    private static string[] Sessions(string run, string kind) =>
+        [.. Methods.Keys.SelectMany(operation => Pair(run, operation))
+            .Where(activity => ReportedActivity.Text(activity, "Kind") == kind)
+            .Select(static activity => ReportedActivity.Tag(activity, "mcp.session.id") ?? string.Empty)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)];
 }

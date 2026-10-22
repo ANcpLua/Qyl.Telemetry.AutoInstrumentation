@@ -1,13 +1,16 @@
+using System.Text.Json;
+
 namespace Qyl.Telemetry.Integration.Tests.Lanes;
 
 /// <summary>
 /// The StackExchange.Redis interceptor against the testbed Redis, managed and NativeAOT. The demo
 /// compares every span with the wire command; the lane also pins the commands whose mapping is not a
-/// plain method-name lookup, so dropping one of those call sites cannot shrink the evidence.
+/// plain method-name lookup, so dropping one of those call sites cannot shrink the evidence. Each probe
+/// names its one span, and the collector must hold it with the same db.operation.name.
 /// </summary>
 [TestClass]
 [TestCategory("redis")]
-public sealed class RedisTests(TestContext testContext)
+sealed class RedisTests : SpanDemoLaneTests<RedisTests>, ISpanDemoLane
 {
     private static readonly Dictionary<string, string> RequiredProbes = new(StringComparer.Ordinal)
     {
@@ -55,31 +58,32 @@ public sealed class RedisTests(TestContext testContext)
         ["KeyTimeToLive"] = "PTTL",
     };
 
-    [TestMethod]
-    public async Task ExportsExpectedTelemetry()
-    {
-        var lane = new DemoContext(DemoLanes.ByName("redis"), testContext);
-        lane.BuildManaged();
-        Verify(lane, (await lane.RunManagedAsync("managed Redis demo")));
-        Verify(lane, (await lane.RunNativeAotAsync(lane.PublishNativeAot(), "NativeAOT Redis demo")));
-    }
+    private static readonly DemoVariant[] Variants = [DemoVariant.Managed(DemoRuns.Managed), DemoVariant.NativeAot(DemoRuns.NativeAot)];
 
-    private static void Verify(DemoContext lane, DemoRun run)
-    {
-        run.RequireSucceeded().RequireReportPassed();
-        var probes = run.RequireAtLeast("Probes", RequiredProbes.Count, "Redis probes").EnumerateArray().ToArray();
-        var observed = probes.GroupBy(static probe => ReportedActivity.Text(probe, "Label") ?? string.Empty)
-            .ToDictionary(static group => group.Key, static group => ReportedActivity.Text(group.Last(), "SpanOperation"), StringComparer.Ordinal);
-        foreach (var (label, operation) in RequiredProbes)
-        {
-            Assert.IsTrue(observed.ContainsKey(label), $"{run.Label} missing required probe {label}\n{run.Dump()}");
-            Assert.AreEqual(operation, observed[label], $"{run.Label} probe {label} reported db.operation.name={observed[label]}, expected {operation}");
-        }
+    public static string LaneName => "redis";
 
-        // Each probe names its one span; the collector must hold it with the same db.operation.name.
-        lane.Telemetry.Spans(run, LaneChecks.SpanReferences(probes.Select(static probe => (
+    public static IReadOnlyList<string> RunKeys => [.. Variants.Select(static variant => variant.Key)];
+
+    public static IEnumerable<object[]> ProbeRows => Rows(RunKeys, RequiredProbes.Keys);
+
+    public static Task<IReadOnlyDictionary<string, DemoRun>> RunAsync(DemoContext lane) => lane.RunAllAsync(Variants);
+
+    public static IEnumerable<JsonElement> ReportedSpans(DemoRun run) =>
+        LaneReport.SpanReferences(run.Array("Probes").Select(static probe => (
             ReportedActivity.Text(probe, "TraceId")!,
             ReportedActivity.Text(probe, "SpanId")!,
-            (IReadOnlyDictionary<string, string>)new Dictionary<string, string> { ["db.operation.name"] = ReportedActivity.Text(probe, "SpanOperation")! }))), "Redis");
-    }
+            (IReadOnlyDictionary<string, string>)new Dictionary<string, string> { ["db.operation.name"] = ReportedActivity.Text(probe, "SpanOperation")! })));
+
+    [TestMethod]
+    [DynamicData(nameof(SucceedingRuns))]
+    public void DemoReport_EachRun_ReportsAtLeastEveryRequiredProbe(string run) =>
+        Assert.IsGreaterThanOrEqualTo(RequiredProbes.Count, Run(run).Array("Probes").Length);
+
+    [TestMethod]
+    [DynamicData(nameof(ProbeRows))]
+    public void RedisProbe_EachRequiredCall_ReportsItsOperationName(string run, string probe) =>
+        Assert.AreEqual(RequiredProbes[probe], Run(run).Array("Probes")
+            .Where(reported => ReportedActivity.Text(reported, "Label") == probe)
+            .Select(static reported => ReportedActivity.Text(reported, "SpanOperation"))
+            .LastOrDefault(), Run(run).Dump());
 }
