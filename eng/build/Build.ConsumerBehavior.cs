@@ -18,7 +18,21 @@ sealed partial class QylBuild
             NativeAotConsumer.Run();
             Shell.Checked("dotnet",
                 ["test", "--project", Repo.IntegrationTests, "--configuration", "Release", "--no-build", "--no-restore", "--",
-                    "--filter", "FullyQualifiedName~CapturedHeaderTests|FullyQualifiedName~ClientHeaderCaptureTests|FullyQualifiedName~ClientMetadataCaptureTests|FullyQualifiedName~GeneratorContractTests"],
+                    "--filter", string.Join('|',
+                        "FullyQualifiedName~CapturedHeaderTests",
+                        "FullyQualifiedName~ClientHeaderCaptureTests",
+                        "FullyQualifiedName~ClientMetadataCaptureTests",
+                        "FullyQualifiedName~GeneratorContractTests",
+                        "FullyQualifiedName~DbCommandInterceptorFailureTests",
+                        "FullyQualifiedName~CollectorEndpointTests",
+                        "FullyQualifiedName~RedisCommandNameTests",
+                        "FullyQualifiedName~WcfClientInterceptionTests",
+                        "FullyQualifiedName~DbQuerySummaryCommentTests",
+                        "FullyQualifiedName~DbQuerySummaryTargetTests",
+                        "FullyQualifiedName~HttpMethodSemanticsTests",
+                        "FullyQualifiedName~KafkaPartitionTests",
+                        "FullyQualifiedName~GenAiOptInDiagnosticTests",
+                        "FullyQualifiedName~DiagnosticListenerSubscriberTests")],
                 Repo.Root, echo: true);
             Log.Information("consumer-behavior-gate-ok");
         });
