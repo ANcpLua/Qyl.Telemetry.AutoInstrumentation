@@ -10,8 +10,10 @@ namespace Qyl.Telemetry.AutoInstrumentation.DiagnosticListeners;
 /// </summary>
 public abstract class QylDiagnosticListenerSubscriber : IObserver<KeyValuePair<string, object?>>, IDisposable
 {
+    private readonly Lock _gate = new();
+    private readonly List<IDisposable> _eventSubscriptions = [];
     private IDisposable? _allListenersSubscription;
-    private IDisposable? _eventSubscription;
+    private bool _disposed;
 
     /// <summary>The well-known <see cref="DiagnosticListener"/> name to subscribe to
     /// (e.g. <c>HttpHandlerDiagnosticListener</c>, <c>Microsoft.AspNetCore</c>).</summary>
@@ -46,12 +48,38 @@ public abstract class QylDiagnosticListenerSubscriber : IObserver<KeyValuePair<s
 
     void IObserver<KeyValuePair<string, object?>>.OnCompleted() { /* invisible */ }
 
-    /// <summary>Tear down both subscriptions.</summary>
+    /// <summary>Tear down the listener-discovery subscription and every listener subscription.
+    /// Listener names are not unique (EF Core creates one listener per internal service provider),
+    /// so there can be several.</summary>
     public void Dispose()
     {
-        _eventSubscription?.Dispose();
         _allListenersSubscription?.Dispose();
+        IDisposable[] eventSubscriptions;
+        lock (_gate)
+        {
+            _disposed = true;
+            eventSubscriptions = [.. _eventSubscriptions];
+            _eventSubscriptions.Clear();
+        }
+
+        foreach (var subscription in eventSubscriptions)
+            subscription.Dispose();
+
         GC.SuppressFinalize(this);
+    }
+
+    private void Track(IDisposable eventSubscription)
+    {
+        lock (_gate)
+        {
+            if (!_disposed)
+            {
+                _eventSubscriptions.Add(eventSubscription);
+                return;
+            }
+        }
+
+        eventSubscription.Dispose();
     }
 
     private sealed class AllListenersObserver(QylDiagnosticListenerSubscriber owner) : IObserver<DiagnosticListener>
@@ -59,7 +87,7 @@ public abstract class QylDiagnosticListenerSubscriber : IObserver<KeyValuePair<s
         public void OnNext(DiagnosticListener value)
         {
             if (value.Name == owner.ListenerName)
-                owner._eventSubscription = value.Subscribe(owner);
+                owner.Track(value.Subscribe(owner));
         }
 
         public void OnError(Exception error) { }
