@@ -485,8 +485,23 @@ public sealed partial class QylAutoInstrumentationGenerator : IIncrementalGenera
     private static string GetMethodPrefix(in InterceptorTarget target)
         => target.Integration.Name + "_" + target.MethodName;
 
-    private static void EmitActivityDisposeFinally(StringBuilder builder)
+    private static void EmitFailureAndDisposal(StringBuilder builder, in InterceptorTarget target, bool recordsDuration, bool runtimeObservesTask)
     {
+        builder.AppendLine("            }");
+        builder.AppendLine("            catch (global::System.Exception exception)");
+        builder.AppendLine("            {");
+        builder.Append("                ");
+        builder.Append(SharedHelperType);
+        builder.AppendLine(".RecordFailure(activity, exception);");
+        if (recordsDuration)
+            AppendRecordDurationStatement(builder, in target);
+        if (runtimeObservesTask)
+            builder.AppendLine("                activity?.Dispose();");
+        builder.AppendLine("                throw;");
+        builder.AppendLine("            }");
+        if (runtimeObservesTask)
+            return;
+
         builder.AppendLine("            finally");
         builder.AppendLine("            {");
         builder.AppendLine("                activity?.Dispose();");
@@ -540,20 +555,7 @@ public sealed partial class QylAutoInstrumentationGenerator : IIncrementalGenera
         builder.AppendLine("            try");
         builder.AppendLine("            {");
         EmitTraceInvocation(builder, in target, runtimeObservesAsync);
-        builder.AppendLine("            }");
-        builder.AppendLine("            catch (global::System.Exception exception)");
-        builder.AppendLine("            {");
-        builder.Append("                ");
-        builder.Append(SharedHelperType);
-        builder.AppendLine(".RecordFailure(activity, exception);");
-        if (intercept.Metric.Length > 0)
-            AppendRecordDurationStatement(builder, in target);
-        if (runtimeObservesAsync)
-            builder.AppendLine("                activity?.Dispose();");
-        builder.AppendLine("                throw;");
-        builder.AppendLine("            }");
-        if (!runtimeObservesAsync)
-            EmitActivityDisposeFinally(builder);
+        EmitFailureAndDisposal(builder, in target, recordsDuration: intercept.Metric.Length > 0, runtimeObservesAsync);
         builder.AppendLine("        }");
         builder.AppendLine();
     }
@@ -747,18 +749,7 @@ public sealed partial class QylAutoInstrumentationGenerator : IIncrementalGenera
             builder.AppendLine("                return result;");
         }
 
-        builder.AppendLine("            }");
-        builder.AppendLine("            catch (global::System.Exception exception)");
-        builder.AppendLine("            {");
-        builder.Append("                ");
-        builder.Append(SharedHelperType);
-        builder.AppendLine(".RecordFailure(activity, exception);");
-        AppendRecordDurationStatement(builder, in target);
-        builder.AppendLine("                throw;");
-        builder.AppendLine("            }");
-        if (!target.IsAsync)
-            EmitActivityDisposeFinally(builder);
-
+        EmitFailureAndDisposal(builder, in target, recordsDuration: true, runtimeObservesTask: target.IsAsync);
         builder.AppendLine("        }");
         builder.AppendLine();
     }
