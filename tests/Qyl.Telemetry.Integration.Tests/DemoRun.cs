@@ -1,5 +1,5 @@
 using System.Text.Json;
-using Qyl.Telemetry.Testing;
+using Qyl.Telemetry.Tests;
 
 namespace Qyl.Telemetry.Integration.Tests;
 

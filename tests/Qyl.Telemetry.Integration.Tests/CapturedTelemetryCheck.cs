@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Qyl.Telemetry.SemanticConventions;
-using Qyl.Telemetry.Testing;
+using Qyl.Telemetry.Tests;
 
 namespace Qyl.Telemetry.Integration.Tests;
 

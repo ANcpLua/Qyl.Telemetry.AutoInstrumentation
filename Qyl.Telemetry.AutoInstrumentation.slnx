@@ -19,6 +19,10 @@
     <File Path="CHANGELOG.archive.md" />
   </Folder>
   <Project Path="eng/build/build.csproj" />
+  <Folder Name="/eng/dependencies/">
+    <Project Path="eng/dependencies/Qyl.Telemetry.Tests/Qyl.Telemetry.Tests/Qyl.Telemetry.Tests.csproj" />
+    <Project Path="eng/dependencies/Qyl.Telemetry.Tests/Qyl.Telemetry.Tests.Capture/Qyl.Telemetry.Tests.Capture.csproj" />
+  </Folder>
   <Project Path="eng/fixtures/Qyl.Telemetry.TestFixtures/Qyl.Telemetry.TestFixtures.csproj" />
   <Project Path="benchmarks/Qyl.Telemetry.AutoInstrumentation.Benchmarks/Qyl.Telemetry.AutoInstrumentation.Benchmarks.csproj" />
   <Project Path="src/Qyl.Telemetry.AutoInstrumentation/Qyl.Telemetry.AutoInstrumentation.csproj" />

@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
-using Qyl.Telemetry.Testing;
+using Qyl.Telemetry.Tests;
 using SessionAttributes = Qyl.Telemetry.SemanticConventions.Incubating.Attributes.Session.SessionAttributes;
 
 namespace Qyl.Telemetry.Integration.Tests.Lanes;

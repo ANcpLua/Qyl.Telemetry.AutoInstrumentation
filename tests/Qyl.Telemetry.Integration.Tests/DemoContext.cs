@@ -1,6 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Qyl.Telemetry.Testing;
+using Qyl.Telemetry.Tests;
 
 namespace Qyl.Telemetry.Integration.Tests;
 
