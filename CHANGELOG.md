@@ -3,6 +3,21 @@
 Notable changes to the `Qyl.Telemetry.*` package family, one entry per `<Version>` in
 `Directory.Build.props`.
 
+## [28.2.4] - 2026-10-22
+
+- Consume SemanticConventions 15.0.5. Public API unchanged; generated-code ABI V28.
+- End the span of an async DbCommand call that throws before returning its task.
+- Export `AddQyl` HTTP/protobuf signals under the base path of the collector endpoint instead of replacing it.
+- Name Redis spans by the command StackExchange.Redis sends for negative increments, bounded `ZCOUNT` and `MaxValue` expiry.
+- Give RPC client spans only to contract operations of a WCF `ClientBase<T>` client, named from the contract operation.
+- Keep text inside nested block comments out of `db.query.summary`; summarise T-SQL `UPDATE TOP (n) [PERCENT]` with the updated table.
+- Report `http.request.method_original` whenever the normalized HTTP method differs from the sent one.
+- Bind no `messaging.destination.partition.id` when producing to Kafka `Partition.Any`.
+- Accept a chat client or agent opted in through its OpenTelemetry wrapper's constructor in QYL1002.
+- Stop every listener subscription when `QylDiagnosticListenerSubscriber` is disposed, not only the last one.
+- Generate compilable string literals for operation names with any character (U+2028 included); report EF Core `db.namespace` trimmed like SqlClient.
+- Share one boot sequence, capture guard, async observation loop and database tag writer across the packages; run the regression and host-configuration tests in the consumer-behavior gate.
+
 ## [28.2.3] - 2026-10-19
 
 - Consume SemanticConventions 15.0.2 with corrected native-vendor persistence policy and analyzer namespace recognition.
