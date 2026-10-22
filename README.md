@@ -164,7 +164,7 @@ the call: Info for GraphQL.NET and ODP.NET, Warning for the three GenAI librarie
 | --- | --- | --- |
 | GraphQL.NET | `IGraphQLBuilder.UseTelemetry()` | the `GraphQL` `ActivitySource` stays silent: no spans at all |
 | Oracle ODP.NET | `TracerProviderBuilder.AddOracleDataProviderInstrumentation()` (package `Oracle.ManagedDataAccess.OpenTelemetry`) | the command spans still arrive, carrying only `db.system`, `db.odp.roundtrip.count`, `db.odp.roundtrip.duration` and `db.response.returned_rows`; `db.name`, `db.user`, `db.statement`, `server.address`, `server.port`, `db.odp.connection.id`, `db.odp.sql_id` and exception recording stay off |
-| Microsoft.Extensions.AI, Microsoft.Agents.AI, Workflows | `UseOpenTelemetry()` / `WithOpenTelemetry()` | the GenAI sources stay silent |
+| Microsoft.Extensions.AI, Microsoft.Agents.AI, Workflows | `UseOpenTelemetry()` / `WithOpenTelemetry()`, or constructing `OpenTelemetryChatClient` / `OpenTelemetryAgent` directly | the GenAI sources stay silent |
 
 MySql.Data needs no opt-in (`AddConnectorNet()` is only `AddSource("connector-net")`). It always
 sends the full command text as `db.statement`, with no option to turn it off; masking it is the

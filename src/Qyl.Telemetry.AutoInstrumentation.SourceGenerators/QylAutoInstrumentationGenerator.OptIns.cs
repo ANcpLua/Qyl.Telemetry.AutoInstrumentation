@@ -1,6 +1,5 @@
 using ANcpLua.Roslyn.Utilities;
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Qyl.Telemetry.AutoInstrumentation.SourceGenerators;
 
@@ -26,6 +25,7 @@ public sealed partial class QylAutoInstrumentationGenerator
     /// <param name="TriggerMethods">The names of the calls that use the library.</param>
     /// <param name="OptInMethod">The name of the call that turns its telemetry on.</param>
     /// <param name="OptInNamespace">When set, the namespace (or a parent of it) that call must come from.</param>
+    /// <param name="OptInType">When set, the library's telemetry wrapper, whose construction is the same opt-in.</param>
     /// <param name="OptInDisplay">The call as the message shows it.</param>
     /// <param name="Consequence">What is lost without the call.</param>
     /// <param name="Severity">Info for reduced telemetry, Warning for telemetry that stays off.</param>
@@ -36,6 +36,7 @@ public sealed partial class QylAutoInstrumentationGenerator
         EquatableArray<string> TriggerMethods,
         string OptInMethod,
         string OptInNamespace,
+        string OptInType,
         string OptInDisplay,
         string Consequence,
         DiagnosticSeverity Severity);
@@ -49,6 +50,7 @@ public sealed partial class QylAutoInstrumentationGenerator
             ImmutableArray.Create("AddGraphQL").AsEquatableArray(),
             "UseTelemetry",
             string.Empty,
+            string.Empty,
             "IGraphQLBuilder.UseTelemetry()",
             "GraphQL.NET's ActivitySource stays silent, so the application produces no GraphQL spans at all",
             DiagnosticSeverity.Info),
@@ -58,6 +60,7 @@ public sealed partial class QylAutoInstrumentationGenerator
             string.Empty,
             ImmutableArray.Create("ExecuteScalar", "ExecuteNonQuery", "ExecuteReader").AsEquatableArray(),
             "AddOracleDataProviderInstrumentation",
+            string.Empty,
             string.Empty,
             "TracerProviderBuilder.AddOracleDataProviderInstrumentation()",
             "ODP.NET still emits its command spans, but only with db.system, db.odp.roundtrip.count, "
@@ -72,6 +75,7 @@ public sealed partial class QylAutoInstrumentationGenerator
             ImmutableArray.Create("GetResponseAsync", "GetStreamingResponseAsync").AsEquatableArray(),
             "UseOpenTelemetry",
             "Microsoft.Extensions.AI",
+            "Microsoft.Extensions.AI.OpenTelemetryChatClient",
             "ChatClientBuilder.UseOpenTelemetry()",
             "the Experimental.Microsoft.Extensions.AI ActivitySource stays silent, so no chat or execute_tool span "
             + "and no token usage is recorded",
@@ -83,6 +87,7 @@ public sealed partial class QylAutoInstrumentationGenerator
             ImmutableArray.Create("RunAsync", "RunStreamingAsync").AsEquatableArray(),
             "UseOpenTelemetry",
             "Microsoft.Agents.AI",
+            "Microsoft.Agents.AI.OpenTelemetryAgent",
             "AIAgentBuilder.UseOpenTelemetry()",
             "the Experimental.Microsoft.Agents.AI ActivitySource stays silent, so no invoke_agent span is recorded",
             DiagnosticSeverity.Warning),
@@ -93,32 +98,30 @@ public sealed partial class QylAutoInstrumentationGenerator
             ImmutableArray.Create("Build").AsEquatableArray(),
             "WithOpenTelemetry",
             "Microsoft.Agents.AI.Workflows",
+            string.Empty,
             "WorkflowBuilder.WithOpenTelemetry()",
             "the Microsoft.Agents.AI.Workflows ActivitySource stays silent, so no workflow span is recorded",
             DiagnosticSeverity.Warning),
     ];
 
-    /// <summary>What one invocation said about the opt-in table: it used a library, or it opted one in.</summary>
+    /// <summary>What one invocation or construction said about the opt-in table: it used a library, or it opted one in.</summary>
     private readonly record struct OptInSignal(int Row, bool IsOptIn, Location? Location);
 
     private static OptInSignal ScanOptIn(GeneratorSyntaxContext context, CancellationToken cancellationToken)
     {
-        var invocation = (InvocationExpressionSyntax)context.Node;
+        var node = context.Node;
         var compilation = context.SemanticModel.Compilation;
         if (compilation.AssemblyName is { } assemblyName && QylRuntimeAssemblies.Contains(assemblyName))
             return default;
 
-        if (context.SemanticModel.GetSymbolInfo(invocation, cancellationToken).Symbol is not IMethodSymbol symbol)
+        if (context.SemanticModel.GetSymbolInfo(node, cancellationToken).Symbol is not IMethodSymbol symbol)
             return default;
 
         for (var row = 0; row < OptIns.Length; row++)
         {
             var declaration = OptIns[row];
-            if (string.Equals(symbol.Name, declaration.OptInMethod, StringComparison.Ordinal) &&
-                (declaration.OptInNamespace.Length is 0 || IsInNamespace(symbol, declaration.OptInNamespace)))
-            {
+            if (IsOptIn(symbol, in declaration))
                 return new OptInSignal(row + 1, true, null);
-            }
 
             if (!ContainsOrdinal(declaration.TriggerMethods, symbol.Name) || !IsTriggerType(symbol, declaration.TriggerType))
                 continue;
@@ -127,12 +130,19 @@ public sealed partial class QylAutoInstrumentationGenerator
                 (symbol.ReducedFrom is { Parameters.Length: > 0 } reduced &&
                  IsInNamespace(reduced.Parameters[0].Type, declaration.TriggerNamespace)))
             {
-                return new OptInSignal(row + 1, false, invocation.GetLocation());
+                return new OptInSignal(row + 1, false, node.GetLocation());
             }
         }
 
         return default;
     }
+
+    private static bool IsOptIn(IMethodSymbol symbol, in OptInDeclaration declaration)
+        => symbol.MethodKind is MethodKind.Constructor
+            ? declaration.OptInType.Length > 0 &&
+              string.Equals(symbol.ContainingType.ToDisplayString(), declaration.OptInType, StringComparison.Ordinal)
+            : string.Equals(symbol.Name, declaration.OptInMethod, StringComparison.Ordinal) &&
+              (declaration.OptInNamespace.Length is 0 || IsInNamespace(symbol, declaration.OptInNamespace));
 
     private static bool IsTriggerType(IMethodSymbol symbol, string triggerType)
     {
