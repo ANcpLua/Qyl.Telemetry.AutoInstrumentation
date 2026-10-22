@@ -217,14 +217,13 @@ public sealed partial class QylAutoInstrumentationGenerator
     private static bool TryMatchWcfClient(IMethodSymbol symbol, out ShapeMatch match)
     {
         match = default;
-        var contractType = GetWcfContractType(symbol.ContainingType);
         if (symbol.IsStatic ||
             symbol.MethodKind is not MethodKind.Ordinary ||
             symbol.IsGenericMethod ||
-            IsWcfInfrastructureMethod(symbol.Name) ||
             !CanEmitByValueOrInParameters(symbol) ||
-            contractType is null ||
-            IsSystemServiceModelType(symbol.ContainingType))
+            IsSystemServiceModelType(symbol.ContainingType) ||
+            GetWcfContractType(symbol.ContainingType) is not { } contractType ||
+            FindWcfOperation(contractType, symbol) is not { } operation)
         {
             return false;
         }
@@ -234,8 +233,29 @@ public sealed partial class QylAutoInstrumentationGenerator
             EmittedTypeName(symbol.ReturnType, symbol),
             BuildParameters(symbol),
             IsTask(symbol.ReturnType) || TryGetTaskResult(symbol.ReturnType, out _),
-            ShapeExpression: QuoteLiteral(GetWcfMethodName(contractType, symbol)));
+            ShapeExpression: QuoteLiteral(GetWcfMethodName(contractType, operation)));
         return true;
+    }
+
+    // Only a method that implements an operation of the contract sends a message; helpers and
+    // object overrides on the client class do not.
+    private static IMethodSymbol? FindWcfOperation(INamedTypeSymbol contractType, IMethodSymbol implementation)
+    {
+        foreach (var contract in contractType.AllInterfaces.Insert(0, contractType))
+        {
+            foreach (var member in contract.GetMembers(implementation.Name))
+            {
+                if (member is IMethodSymbol operation &&
+                    SymbolEqualityComparer.Default.Equals(
+                        implementation.ContainingType.FindImplementationForInterfaceMember(operation)?.OriginalDefinition,
+                        implementation.OriginalDefinition))
+                {
+                    return operation;
+                }
+            }
+        }
+
+        return null;
     }
 
     private static INamedTypeSymbol? GetWcfContractType(INamedTypeSymbol clientType)
@@ -254,26 +274,16 @@ public sealed partial class QylAutoInstrumentationGenerator
 
     // rpc.method is the contract's own naming: the ServiceContract/OperationContract Name overrides
     // when present, else the interface and method names.
-    private static string GetWcfMethodName(INamedTypeSymbol contractType, IMethodSymbol implementation)
+    private static string GetWcfMethodName(INamedTypeSymbol contractType, IMethodSymbol operation)
     {
         var serviceName = GetAttributeName(
                               contractType,
                               "System.ServiceModel.ServiceContractAttribute") ??
                           contractType.Name;
-        var operationName = implementation.Name;
-        foreach (var member in contractType.GetMembers(implementation.Name))
-        {
-            if (member is IMethodSymbol contractMethod &&
-                contractMethod.Parameters.Length == implementation.Parameters.Length)
-            {
-                operationName = GetAttributeName(
-                                    contractMethod,
-                                    "System.ServiceModel.OperationContractAttribute") ??
-                                contractMethod.Name;
-                break;
-            }
-        }
-
+        var operationName = GetAttributeName(
+                                operation,
+                                "System.ServiceModel.OperationContractAttribute") ??
+                            operation.Name;
         return serviceName + "/" + operationName;
     }
 
@@ -296,19 +306,6 @@ public sealed partial class QylAutoInstrumentationGenerator
 
         return null;
     }
-
-    private static bool IsWcfInfrastructureMethod(string methodName)
-        => methodName is "Open" or
-            "OpenAsync" or
-            "Close" or
-            "CloseAsync" or
-            "Abort" or
-            "Dispose" or
-            "GetProperty" or
-            "BeginOpen" or
-            "EndOpen" or
-            "BeginClose" or
-            "EndClose";
 
     private static bool IsSystemServiceModelType(ITypeSymbol? symbol)
         => symbol is INamedTypeSymbol named &&
